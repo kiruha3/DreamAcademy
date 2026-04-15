@@ -2,6 +2,7 @@
   <div class="forum-viewer">
     <div v-if="loading" class="loading">Загрузка форума...</div>
     <div v-else>
+      <div v-if="data.intro" class="forum-intro" v-html="sanitized(data.intro)"></div>
       <div class="forum-actions">
         <button class="btn-primary" @click="showNewTopic = !showNewTopic">
           {{ showNewTopic ? 'Отмена' : 'Новая тема' }}
@@ -85,10 +86,19 @@ async function createTopic() {
     sending.value = false
   }
 }
+
+function sanitized(html) {
+  if (!html) return ''
+  const allowed = /<(\/?)(b|i|em|strong|u|p|br|hr|h[1-6]|ul|ol|li|div|span|a|img|table|thead|tbody|tr|td|th|blockquote|pre|code|sup|sub)(\s+[^>]*)?>/gi
+  return html.replace(/<[^>]+>/g, (tag) => {
+    return allowed.test(tag) ? tag : ''
+  })
+}
 </script>
 
 <style scoped>
 .forum-viewer { }
+.forum-intro { margin-bottom: 12px; line-height: 1.5; color: #374151; }
 .forum-actions { margin-bottom: 10px; }
 .btn-primary { background: var(--color-primary); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
 .btn-primary:disabled { opacity: 0.6; }

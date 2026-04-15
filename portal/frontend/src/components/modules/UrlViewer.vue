@@ -1,6 +1,6 @@
 <template>
   <div class="url-viewer">
-    <p v-if="data.intro" class="url-intro">{{ data.intro }}</p>
+    <div v-if="data.intro" class="url-intro" v-html="sanitized(data.intro)"></div>
     <a :href="data.externalurl" target="_blank" rel="noopener" class="url-link">
       Перейти по ссылке →
     </a>
@@ -12,6 +12,14 @@
 const props = defineProps({
   data: { type: Object, required: true }
 })
+
+function sanitized(html) {
+  if (!html) return ''
+  const allowed = /<(\/?)(b|i|em|strong|u|p|br|hr|h[1-6]|ul|ol|li|div|span|a|img|table|thead|tbody|tr|td|th|blockquote|pre|code|sup|sub)(\s+[^>]*)?>/gi
+  return html.replace(/<[^>]+>/g, (tag) => {
+    return allowed.test(tag) ? tag : ''
+  })
+}
 </script>
 
 <style scoped>

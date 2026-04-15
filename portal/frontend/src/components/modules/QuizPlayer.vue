@@ -4,6 +4,7 @@
       <p>В этом тесте пока нет вопросов.</p>
     </div>
     <div v-else-if="!attemptId" class="quiz-start">
+      <div v-if="data.intro" class="quiz-intro" v-html="sanitized(data.intro)"></div>
       <p>Готовы начать тест?</p>
       <button class="btn-primary" @click="start" :disabled="starting">{{ starting ? 'Загрузка...' : 'Начать тест' }}</button>
     </div>
@@ -209,6 +210,7 @@ function sanitized(html) {
 .quiz-player { }
 .quiz-start { display: flex; flex-direction: column; gap: 10px; }
 .quiz-empty { color: #6b7280; font-size: 14px; }
+.quiz-intro { margin-bottom: 12px; line-height: 1.5; color: #374151; }
 .btn-primary { background: var(--color-primary); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
 .btn-primary:disabled { opacity: 0.6; }
 .btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
