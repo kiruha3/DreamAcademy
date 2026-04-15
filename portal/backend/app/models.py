@@ -27,3 +27,13 @@ class Submission(Base):
     grade = Column(Float, nullable=True)
     feedback = Column(Text, nullable=True)
     graded_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class UserModuleCompletion(Base):
+    __tablename__ = "user_module_completions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    cmid = Column(Integer, nullable=False, index=True)
+    course_id = Column(Integer, nullable=False, index=True)
+    completed_at = Column(DateTime(timezone=True), server_default=func.now())

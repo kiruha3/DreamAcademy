@@ -138,9 +138,10 @@ class MoodleClient:
         return data
 
     async def update_activity_completion_status(self, cmid: int, user_id: int, completed: bool = True) -> Dict[str, Any]:
-        url = self._build_url("core_completion_update_activity_completion_status", {
+        # core_completion_update_activity_completion_status_manually does not accept userid;
+        # it uses the token's current user.
+        url = self._build_url("core_completion_update_activity_completion_status_manually", {
             "cmid": cmid,
-            "userid": user_id,
             "completed": int(completed),
         })
         response = await self.client.get(url)

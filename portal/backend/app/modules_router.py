@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .security import get_current_user, require_roles, get_db
-from .models import User, Submission
+from .models import User, Submission, UserModuleCompletion
 from .moodle_client import MoodleClient
 from .config import get_settings
 from . import moodle_db
@@ -100,14 +100,31 @@ async def mark_module_complete(
     cmid: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     if not current_user.moodle_user_id:
         raise HTTPException(status_code=400, detail="User not linked to Moodle")
+    moodle_ok = False
     try:
         result = await client.update_activity_completion_status(cmid, current_user.moodle_user_id, completed=True)
-        return {"status": "completed", "cmid": cmid, "result": result}
+        moodle_ok = True
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update completion: {str(e)}")
+        msg = str(e)
+        if "cannotmanualctrack" in msg or "completionnotenabled" in msg:
+            pass  # fallback to local tracking
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to update completion: {msg}")
+
+    # Local tracking fallback / backup
+    existing = db.query(UserModuleCompletion).filter(
+        UserModuleCompletion.user_id == current_user.id,
+        UserModuleCompletion.cmid == cmid,
+    ).first()
+    if not existing:
+        db.add(UserModuleCompletion(user_id=current_user.id, cmid=cmid, course_id=course_id))
+        db.commit()
+
+    return {"status": "completed", "cmid": cmid, "moodle_sync": moodle_ok}
 
 
 @router.get("/{course_id}/progress")
@@ -115,29 +132,65 @@ async def get_course_progress(
     course_id: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     if not current_user.moodle_user_id:
         return {"course_id": course_id, "modules": [], "completed_count": 0, "total_count": 0}
+
+    # Get all modules in the course for accurate total count
+    try:
+        contents = await client.get_course_contents(course_id)
+    except Exception:
+        contents = []
+
+    all_modules = []
+    for section in contents:
+        for mod in section.get("modules", []):
+            all_modules.append({
+                "cmid": mod.get("id"),
+                "modname": mod.get("modname"),
+                "completed": False,
+            })
+
+    # Moodle completion statuses
+    moodle_completed = set()
     try:
         data = await client.get_activities_completion_status(course_id, current_user.moodle_user_id)
         statuses = data.get("statuses", []) if isinstance(data, dict) else []
-        modules = []
         for s in statuses:
-            modules.append({
-                "cmid": s.get("cmid"),
-                "completed": bool(s.get("state")),
-                "modname": s.get("modname"),
-            })
-        total = len(modules)
-        completed = sum(1 for m in modules if m["completed"])
-        return {
-            "course_id": course_id,
-            "modules": modules,
-            "completed_count": completed,
-            "total_count": total,
-        }
-    except Exception as e:
-        return {"course_id": course_id, "modules": [], "completed_count": 0, "total_count": 0, "error": str(e)}
+            if bool(s.get("state")):
+                moodle_completed.add(s.get("cmid"))
+    except Exception:
+        pass
+
+    # Local completions
+    local_completed = set()
+    local_rows = db.query(UserModuleCompletion).filter(
+        UserModuleCompletion.user_id == current_user.id,
+        UserModuleCompletion.course_id == course_id,
+    ).all()
+    for row in local_rows:
+        local_completed.add(row.cmid)
+
+    completed_cmix = moodle_completed | local_completed
+
+    modules = []
+    for mod in all_modules:
+        cmid = mod["cmid"]
+        modules.append({
+            "cmid": cmid,
+            "modname": mod["modname"],
+            "completed": cmid in completed_cmix,
+        })
+
+    total = len(modules)
+    completed = sum(1 for m in modules if m["completed"])
+    return {
+        "course_id": course_id,
+        "modules": modules,
+        "completed_count": completed,
+        "total_count": total,
+    }
 
 
 # ===================== ASSIGNMENT =====================
