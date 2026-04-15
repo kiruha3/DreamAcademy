@@ -1,10 +1,15 @@
-from fastapi import APIRouter, Depends
+import os
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from typing import Dict, Any, List
 from .moodle_client import MoodleClient
 from .config import get_settings
 from . import moodle_db
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
+
+UPLOADED_MOODLEDATA = os.getenv("MOODLEDATA_PATH", "/moodledata")
+
 
 async def get_moodle_client() -> MoodleClient:
     settings = get_settings()
@@ -46,10 +51,28 @@ async def list_courses(client: MoodleClient = Depends(get_moodle_client)) -> Dic
     _fix_moodle_urls(courses, settings.MOODLE_URL, settings.MOODLE_PUBLIC_URL)
 
     course_ids = [c["id"] for c in courses if isinstance(c, dict)]
-    db_images = moodle_db.get_course_images(course_ids, settings.MOODLE_PUBLIC_URL, settings.MOODLE_TOKEN)
+    db_images = moodle_db.get_course_images(course_ids)
 
     for course in courses:
         cid = course.get("id")
-        image = db_images.get(cid) or _extract_course_image(course)
-        course["imageUrl"] = image
+        if cid in db_images:
+            course["imageUrl"] = f"/api/courses/{cid}/image"
+        else:
+            course["imageUrl"] = _extract_course_image(course)
     return {"courses": courses}
+
+
+@router.get("/{course_id}/image")
+async def get_course_image(course_id: int) -> FileResponse:
+    images = moodle_db.get_course_images([course_id])
+    info = images.get(course_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Course image not found")
+
+    ch = info["contenthash"]
+    file_path = os.path.join(UPLOADED_MOODLEDATA, "filedir", ch[:2], ch[2:4], ch)
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="Image file missing on disk")
+
+    media_type = info.get("mimetype") or "application/octet-stream"
+    return FileResponse(file_path, media_type=media_type, filename=info.get("filename", "image"))

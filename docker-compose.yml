@@ -55,6 +55,7 @@ services:
       - ./portal/backend/app:/app/app
       - backend_data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock
+      - moodledata_data:/moodledata
 
 volumes:
   db_data:
