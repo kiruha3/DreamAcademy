@@ -44,7 +44,14 @@ def ensure_user_token(user_id: int, service_id: int = 2, creator_id: int = 2) ->
             return token
 
 
+ALLOWED_MODULES = {"page", "url", "label", "forum", "quiz", "assign", "resource", "book", "lesson", "wiki", "glossary", "choice", "feedback", "survey", "data", "scorm", "lti", "folder", "imscp"}
+
+def _validate_modname(modname: str) -> None:
+    if modname not in ALLOWED_MODULES:
+        raise ValueError(f"Invalid module name: {modname}")
+
 def get_module_instance(modname: str, instance_id: int) -> Optional[Dict[str, Any]]:
+    _validate_modname(modname)
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(f"SELECT * FROM {PREFIX}{modname} WHERE id = %s LIMIT 1", (instance_id,))
@@ -279,6 +286,7 @@ def delete_module(cmid: int) -> None:
             cur.execute(f"DELETE FROM {PREFIX}course_modules WHERE id = %s", (cmid,))
 
             if modname:
+                _validate_modname(modname)
                 cur.execute(f"DELETE FROM {PREFIX}{modname} WHERE id = %s", (instance_id,))
 
             # Update sequence

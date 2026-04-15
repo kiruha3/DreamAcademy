@@ -29,6 +29,7 @@ async def invite_to_course(
 ):
     users = await client.get_users(key="email", value=invite.email)
     user_list = users.get("users", [])
+    temp_password = None
 
     if user_list:
         user_id = user_list[0]["id"]

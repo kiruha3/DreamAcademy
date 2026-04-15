@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
+from typing import Optional
 import secrets
 
 from .security import get_db, get_password_hash, verify_password, create_access_token, get_current_user
@@ -42,7 +43,7 @@ class UserOut(BaseModel):
     firstname: str
     lastname: str
     role: str
-    moodle_user_id: int | None = None
+    moodle_user_id: Optional[int] = None
 
     class Config:
         from_attributes = True

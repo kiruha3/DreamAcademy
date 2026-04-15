@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, List
 from jose import JWTError, jwt
 import bcrypt
 from fastapi import Depends, HTTPException, status
@@ -24,8 +24,12 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
+MAX_PASSWORD_BYTES = 72
+
 def get_password_hash(password: str) -> str:
-    pwd_bytes = password.encode("utf-8")[:72]
+    pwd_bytes = password.encode("utf-8")
+    if len(pwd_bytes) > MAX_PASSWORD_BYTES:
+        raise ValueError(f"Password exceeds {MAX_PASSWORD_BYTES} bytes")
     return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode("utf-8")
 
 
@@ -61,7 +65,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     return user
 
 
-def require_roles(allowed_roles: list[str]):
+def require_roles(allowed_roles: List[str]):
     def checker(current_user: User = Depends(get_current_user)) -> User:
         if current_user.role not in allowed_roles:
             raise HTTPException(
