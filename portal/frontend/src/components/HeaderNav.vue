@@ -7,6 +7,7 @@
           alt="DreamDocs"
           class="logo"
         />
+        <span class="logo-text">academy</span>
       </router-link>
       <nav class="nav">
         <router-link to="/courses">Курсы</router-link>
@@ -38,7 +39,18 @@ function logout() {
 <style scoped>
 .header { background: var(--color-bg); border-bottom: 1px solid var(--color-bg-light); padding: 16px 0; }
 .header-inner { display: flex; justify-content: space-between; align-items: center; }
+.logo-link { display: inline-flex; align-items: flex-end; gap: 6px; text-decoration: none; }
 .logo { height: 32px; }
+.logo-text {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-dark);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  line-height: 1;
+  transform: translateY(-10%);
+}
 .nav a, .nav button, .nav span { margin-left: 24px; text-decoration: none; color: var(--color-dark); font-weight: 500; }
 .nav a:hover { color: var(--color-primary); }
 .nav .btn-primary { margin-left: 24px; padding: 8px 16px; font-size: 14px; border: none; cursor: pointer; }

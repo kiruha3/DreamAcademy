@@ -4,6 +4,10 @@
       <div class="back">
         <router-link to="/courses">← Назад к курсам</router-link>
       </div>
+      <div v-if="courseImage" class="course-hero">
+        <img :src="courseImage" :alt="courseName" class="course-hero-image" />
+      </div>
+
       <h2>{{ courseName }}</h2>
 
       <div v-if="progress.total > 0" class="progress-bar-wrap">
@@ -55,6 +59,7 @@ import ModuleRenderer from '@/components/modules/ModuleRenderer.vue'
 const route = useRoute()
 const sections = ref([])
 const courseName = ref('Курс')
+const courseImage = ref('')
 const loading = ref(true)
 const progress = ref({ completed: 0, total: 0, modules: [] })
 
@@ -127,6 +132,7 @@ onMounted(async () => {
     const match = (coursesData.courses || []).find(c => c.id === cid)
     if (match) {
       courseName.value = match.fullname || match.shortname || 'Курс'
+      courseImage.value = match.imageUrl || ''
     }
     await loadProgress()
   } catch (e) {
@@ -143,6 +149,8 @@ onMounted(async () => {
 .back a { color: var(--color-primary); text-decoration: none; font-weight: 500; }
 .back a:hover { text-decoration: underline; }
 .course-detail h2 { font-size: 32px; color: var(--color-dark); margin-bottom: 16px; }
+.course-hero { margin-bottom: 20px; border-radius: 12px; overflow: hidden; }
+.course-hero-image { width: 100%; max-height: 260px; object-fit: cover; display: block; }
 
 .progress-bar-wrap { margin-bottom: 24px; }
 .progress-label { font-size: 14px; color: #374151; margin-bottom: 6px; }
