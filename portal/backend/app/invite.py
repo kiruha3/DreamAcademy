@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 import secrets
+from typing import Literal
 from .moodle_client import MoodleClient
 from .config import get_settings
 from .moodle_roles import get_moodle_role_id
@@ -20,7 +21,7 @@ class InviteRequest(BaseModel):
 async def invite_to_course(
     course_id: int,
     invite: InviteRequest,
-    role: str = "student",
+    role: Literal["student", "teacher", "course_creator", "admin"] = Query(default="student"),
     client: MoodleClient = Depends(get_moodle_client)
 ):
     users = await client.get_users(key="email", value=invite.email)
@@ -30,8 +31,10 @@ async def invite_to_course(
         user_id = user_list[0]["id"]
     else:
         temp_password = secrets.token_urlsafe(12)
+        base_username = invite.email.replace("@", "_").replace(".", "_")
+        username = f"{base_username}_{secrets.token_hex(3)}"
         created = await client.create_user(
-            username=invite.email.split("@")[0],
+            username=username,
             password=temp_password,
             firstname=invite.firstname or "Student",
             lastname=invite.lastname or "DreamDocs",
@@ -45,4 +48,11 @@ async def invite_to_course(
     moodle_role_id = get_moodle_role_id(role)
     await client.enrol_user(course_id=course_id, user_id=user_id, role_id=moodle_role_id)
 
-    return {"status": "invited", "course_id": course_id, "user_id": user_id, "email": invite.email, "role": role}
+    return {
+        "status": "invited",
+        "course_id": course_id,
+        "user_id": user_id,
+        "email": invite.email,
+        "role": role,
+        # "temp_password": temp_password,  # TODO: отправлять по email, не возвращать в API
+    }
