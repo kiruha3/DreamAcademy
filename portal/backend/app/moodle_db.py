@@ -1,4 +1,5 @@
 import os
+import secrets
 import pymysql
 from typing import List, Dict, Any, Optional
 
@@ -18,6 +19,29 @@ def _connect():
         charset="utf8mb4",
         cursorclass=pymysql.cursors.DictCursor,
     )
+
+
+def ensure_user_token(user_id: int, service_id: int = 2, creator_id: int = 2) -> str:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT token FROM {PREFIX}external_tokens WHERE userid = %s AND externalserviceid = %s LIMIT 1",
+                (user_id, service_id),
+            )
+            row = cur.fetchone()
+            if row and row.get("token"):
+                return row["token"]
+            token = secrets.token_hex(16)
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}external_tokens
+                (token, tokentype, externalserviceid, userid, creatorid, iprestriction, validuntil, timecreated, lastaccess, contextid)
+                VALUES (%s, 0, %s, %s, %s, '', 0, UNIX_TIMESTAMP(), 0, 1)
+                """,
+                (token, service_id, user_id, creator_id),
+            )
+            conn.commit()
+            return token
 
 
 def get_module_instance(modname: str, instance_id: int) -> Optional[Dict[str, Any]]:

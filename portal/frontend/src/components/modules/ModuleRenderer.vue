@@ -10,6 +10,9 @@ import PageViewer from './PageViewer.vue'
 import LabelViewer from './LabelViewer.vue'
 import UrlViewer from './UrlViewer.vue'
 import GenericViewer from './GenericViewer.vue'
+import AssignmentViewer from './AssignmentViewer.vue'
+import QuizPlayer from './QuizPlayer.vue'
+import ForumViewer from './ForumViewer.vue'
 
 const props = defineProps({
   data: { type: Object, required: true }
@@ -20,6 +23,9 @@ const viewerComponent = computed(() => {
     case 'page': return PageViewer
     case 'label': return LabelViewer
     case 'url': return UrlViewer
+    case 'assign': return AssignmentViewer
+    case 'quiz': return QuizPlayer
+    case 'forum': return ForumViewer
     default: return GenericViewer
   }
 })

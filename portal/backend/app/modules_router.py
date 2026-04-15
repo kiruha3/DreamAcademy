@@ -1,17 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any
-from .security import get_current_user, require_roles
-from .models import User
+import os
+import shutil
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from typing import Dict, Any, List
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from .security import get_current_user, require_roles, get_db
+from .models import User, Submission
 from .moodle_client import MoodleClient
 from .config import get_settings
 from . import moodle_db
 
 router = APIRouter(prefix="/api/courses", tags=["modules"])
 
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/submissions")
+
 
 def get_moodle_client() -> MoodleClient:
     settings = get_settings()
     return MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+
+
+def get_user_moodle_client(user_id: int) -> MoodleClient:
+    settings = get_settings()
+    user_token = moodle_db.ensure_user_token(user_id)
+    return MoodleClient(base_url=settings.MOODLE_URL, token=user_token)
 
 
 @router.get("/{course_id}/modules/{cmid}")
@@ -21,7 +34,6 @@ async def get_module_detail(
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
 ) -> Dict[str, Any]:
-    # Find the module in the course contents to get metadata
     contents = await client.get_course_contents(course_id)
     target_module = None
     for section in contents:
@@ -37,8 +49,6 @@ async def get_module_detail(
 
     modname = target_module.get("modname")
     instance_id = target_module.get("instance")
-
-    # Fetch instance data via SQL for content-rich modules
     instance = moodle_db.get_module_instance(modname, instance_id) if instance_id else None
 
     payload: Dict[str, Any] = {
@@ -123,5 +133,339 @@ async def get_course_progress(
             "total_count": total,
         }
     except Exception as e:
-        # Graceful fallback if completion tracking is not enabled
         return {"course_id": course_id, "modules": [], "completed_count": 0, "total_count": 0, "error": str(e)}
+
+
+# ===================== ASSIGNMENT =====================
+
+@router.get("/{course_id}/modules/{cmid}/assign/status")
+async def get_assignment_status(
+    course_id: int,
+    cmid: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    contents = await client.get_course_contents(course_id)
+    target = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target = mod
+                break
+        if target:
+            break
+    if not target or target.get("modname") != "assign":
+        raise HTTPException(status_code=404, detail="Assignment not found")
+
+    instance = moodle_db.get_module_instance("assign", target.get("instance"))
+    local_sub = db.query(Submission).filter(Submission.cmid == cmid, Submission.user_id == current_user.id).first()
+
+    status = "not_submitted"
+    if local_sub:
+        status = "submitted" if local_sub.grade is None else "graded"
+
+    return {
+        "cmid": cmid,
+        "intro": instance.get("intro", "") if instance else "",
+        "duedate": instance.get("duedate", 0) if instance else 0,
+        "grade": instance.get("grade", 0) if instance else 0,
+        "status": status,
+        "submitted_at": local_sub.submitted_at.isoformat() if local_sub else None,
+        "local_grade": local_sub.grade if local_sub else None,
+        "feedback": local_sub.feedback if local_sub else None,
+        "file_name": os.path.basename(local_sub.file_path) if local_sub and local_sub.file_path else None,
+    }
+
+
+@router.post("/{course_id}/modules/{cmid}/assign/submit")
+async def submit_assignment(
+    course_id: int,
+    cmid: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    course_dir = os.path.join(UPLOAD_DIR, str(course_id), str(cmid))
+    os.makedirs(course_dir, exist_ok=True)
+    file_path = os.path.join(course_dir, f"user_{current_user.id}_{file.filename}")
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    existing = db.query(Submission).filter(Submission.cmid == cmid, Submission.user_id == current_user.id).first()
+    if existing:
+        existing.file_path = file_path
+        existing.submitted_at = datetime.utcnow()
+        existing.grade = None
+        existing.feedback = None
+        existing.graded_at = None
+    else:
+        sub = Submission(
+            user_id=current_user.id,
+            cmid=cmid,
+            course_id=course_id,
+            file_path=file_path,
+        )
+        db.add(sub)
+    db.commit()
+    return {"status": "submitted", "cmid": cmid, "filename": file.filename}
+
+
+@router.get("/{course_id}/modules/{cmid}/assign/submissions")
+async def list_assignment_submissions(
+    course_id: int,
+    cmid: int,
+    current_user: User = Depends(require_roles(["admin", "teacher", "course_creator"])),
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    subs = db.query(Submission).filter(Submission.cmid == cmid).all()
+    return {
+        "submissions": [
+            {
+                "user_id": s.user_id,
+                "submitted_at": s.submitted_at.isoformat() if s.submitted_at else None,
+                "grade": s.grade,
+                "feedback": s.feedback,
+                "file_name": os.path.basename(s.file_path) if s.file_path else None,
+            }
+            for s in subs
+        ]
+    }
+
+
+class GradePayload(BaseModel):
+    grade: float
+    feedback: str = ""
+
+
+@router.post("/{course_id}/modules/{cmid}/assign/submissions/{user_id}/grade")
+async def grade_assignment_submission(
+    course_id: int,
+    cmid: int,
+    user_id: int,
+    payload: GradePayload,
+    current_user: User = Depends(require_roles(["admin", "teacher", "course_creator"])),
+    db: Session = Depends(get_db),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    sub = db.query(Submission).filter(Submission.cmid == cmid, Submission.user_id == user_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    sub.grade = payload.grade
+    sub.feedback = payload.feedback
+    sub.graded_at = datetime.utcnow()
+    db.commit()
+
+    # Sync to Moodle if possible
+    contents = await client.get_course_contents(course_id)
+    target = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target = mod
+                break
+        if target:
+            break
+    if target and target.get("instance"):
+        try:
+            await client.save_assignment_grade(target["instance"], user_id, payload.grade, payload.feedback)
+        except Exception:
+            pass
+
+    return {"status": "graded", "cmid": cmid, "user_id": user_id}
+
+
+# ===================== QUIZ =====================
+
+@router.post("/{course_id}/modules/{cmid}/quiz/start")
+async def start_quiz(
+    course_id: int,
+    cmid: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    contents = await client.get_course_contents(course_id)
+    target = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target = mod
+                break
+        if target:
+            break
+    if not target or target.get("modname") != "quiz":
+        raise HTTPException(status_code=404, detail="Quiz not found")
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        result = await user_client.start_quiz_attempt(target["instance"])
+        return result
+    except Exception as e:
+        msg = str(e)
+        if "noquestionsfound" in msg.lower():
+            raise HTTPException(status_code=400, detail="В тесте пока нет вопросов")
+        raise HTTPException(status_code=500, detail=f"Failed to start quiz: {msg}")
+
+
+@router.get("/{course_id}/modules/{cmid}/quiz/attempt/{attempt_id}")
+async def get_quiz_attempt(
+    course_id: int,
+    cmid: int,
+    attempt_id: int,
+    page: int = 0,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        data = await user_client.get_attempt_data(attempt_id, page)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get attempt: {str(e)}")
+
+
+class QuizSavePayload(BaseModel):
+    data: List[Dict[str, Any]]
+
+
+@router.post("/{course_id}/modules/{cmid}/quiz/attempt/{attempt_id}/save")
+async def save_quiz_attempt_api(
+    course_id: int,
+    cmid: int,
+    attempt_id: int,
+    payload: QuizSavePayload,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        result = await user_client.save_quiz_attempt(attempt_id, payload.data)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save attempt: {str(e)}")
+
+
+@router.post("/{course_id}/modules/{cmid}/quiz/attempt/{attempt_id}/finish")
+async def finish_quiz_attempt_api(
+    course_id: int,
+    cmid: int,
+    attempt_id: int,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        result = await user_client.finish_quiz_attempt(attempt_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to finish attempt: {str(e)}")
+
+
+@router.get("/{course_id}/modules/{cmid}/quiz/attempt/{attempt_id}/review")
+async def review_quiz_attempt(
+    course_id: int,
+    cmid: int,
+    attempt_id: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        result = await user_client.get_attempt_review(attempt_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get review: {str(e)}")
+
+
+# ===================== FORUM =====================
+
+@router.get("/{course_id}/modules/{cmid}/forum/discussions")
+async def list_forum_discussions(
+    course_id: int,
+    cmid: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    contents = await client.get_course_contents(course_id)
+    target = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target = mod
+                break
+        if target:
+            break
+    if not target or target.get("modname") != "forum":
+        raise HTTPException(status_code=404, detail="Forum not found")
+    try:
+        result = await client.get_forum_discussions(target["instance"])
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get discussions: {str(e)}")
+
+
+class DiscussionPayload(BaseModel):
+    subject: str
+    message: str
+
+
+@router.post("/{course_id}/modules/{cmid}/forum/discussions")
+async def create_forum_discussion(
+    course_id: int,
+    cmid: int,
+    payload: DiscussionPayload,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    contents = await client.get_course_contents(course_id)
+    target = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target = mod
+                break
+        if target:
+            break
+    if not target or target.get("modname") != "forum":
+        raise HTTPException(status_code=404, detail="Forum not found")
+    if not current_user.moodle_user_id:
+        raise HTTPException(status_code=400, detail="User not linked to Moodle")
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        result = await user_client.add_forum_discussion(target["instance"], payload.subject, payload.message, current_user.moodle_user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create discussion: {str(e)}")
+
+
+@router.get("/{course_id}/modules/{cmid}/forum/discussions/{discussion_id}/posts")
+async def get_forum_posts_api(
+    course_id: int,
+    cmid: int,
+    discussion_id: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    try:
+        result = await client.get_forum_posts(discussion_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get posts: {str(e)}")
+
+
+class PostPayload(BaseModel):
+    subject: str
+    message: str
+    parent_post_id: int
+
+
+@router.post("/{course_id}/modules/{cmid}/forum/discussions/{discussion_id}/posts")
+async def create_forum_post_api(
+    course_id: int,
+    cmid: int,
+    discussion_id: int,
+    payload: PostPayload,
+    current_user: User = Depends(get_current_user),
+) -> Dict[str, Any]:
+    try:
+        user_client = get_user_moodle_client(current_user.moodle_user_id)
+        result = await user_client.add_forum_post(payload.parent_post_id, payload.subject, payload.message)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create post: {str(e)}")

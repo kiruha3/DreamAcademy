@@ -115,8 +115,15 @@ onMounted(async () => {
       fetchCourseContents(route.params.id),
       fetchCourses().catch(() => ({ courses: [] })),
     ])
-    sections.value = contentsData.contents || contentsData.sections || []
     const cid = Number(route.params.id)
+    sections.value = (contentsData.contents || contentsData.sections || []).map(section => ({
+      ...section,
+      modules: (section.modules || []).map(mod => ({
+        ...mod,
+        course_id: cid,
+        cmid: mod.id
+      }))
+    }))
     const match = (coursesData.courses || []).find(c => c.id === cid)
     if (match) {
       courseName.value = match.fullname || match.shortname || 'Курс'

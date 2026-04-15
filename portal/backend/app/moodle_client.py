@@ -16,10 +16,11 @@ class MoodleClient:
     def _check_moodle_error(self, data: Dict[str, Any]) -> None:
         if isinstance(data, dict) and "exception" in data:
             msg = data.get('message', 'Unknown error')
+            code = data.get('errorcode', '')
             # Moodle enrol may fail notification but still succeed enrolment
             if "Message was not sent" in msg:
                 return
-            raise RuntimeError(f"Moodle API error: {msg}")
+            raise RuntimeError(f"Moodle API error [{code}]: {msg}")
 
     async def get_users(self, key: str = "id", value: str = "1") -> Dict[str, Any]:
         params = {f"criteria[0][key]": key, f"criteria[0][value]": value}
@@ -141,6 +142,145 @@ class MoodleClient:
             "cmid": cmid,
             "userid": user_id,
             "completed": int(completed),
+        })
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    # Assignment WS methods
+    async def get_assignment_submission_status(self, assign_id: int, user_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_assign_get_submission_status", {"assignid": assign_id, "userid": user_id})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def save_assignment_grade(self, assign_id: int, user_id: int, grade: float, feedback: str = "") -> Dict[str, Any]:
+        url = self._build_url("mod_assign_save_grade", {
+            "assignmentid": assign_id,
+            "userid": user_id,
+            "grade": grade,
+            "attemptnumber": -1,
+            "addattempt": 0,
+            "workflowstate": "",
+            "applytoall": 0,
+            "plugindata[assignfeedbackcomments_editor][text]": feedback,
+            "plugindata[assignfeedbackcomments_editor][format]": 1,
+        })
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    # Quiz WS methods
+    async def get_quiz_data(self, quiz_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_quiz_get_quizzes_by_courses", {})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            quizzes = data.get("quizzes", []) if isinstance(data, dict) else []
+            for q in quizzes:
+                if q.get("id") == quiz_id:
+                    return q
+            return {}
+
+    async def start_quiz_attempt(self, quiz_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_quiz_start_attempt", {"quizid": quiz_id, "forcenew": 1})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def get_attempt_data(self, attempt_id: int, page: int = 0) -> Dict[str, Any]:
+        url = self._build_url("mod_quiz_get_attempt_data", {"attemptid": attempt_id, "page": page})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def save_quiz_attempt(self, attempt_id: int, data_seq: list) -> Dict[str, Any]:
+        params = {"attemptid": attempt_id}
+        for idx, slot_data in enumerate(data_seq):
+            params[f"data[{idx}][name]"] = slot_data["name"]
+            params[f"data[{idx}][value]"] = slot_data["value"]
+            if slot_data.get("slot") is not None:
+                params[f"data[{idx}][slot]"] = slot_data["slot"]
+        url = self._build_url("mod_quiz_save_attempt", params)
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def finish_quiz_attempt(self, attempt_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_quiz_finish_attempt", {"attemptid": attempt_id, "timeup": 0})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def get_attempt_review(self, attempt_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_quiz_get_attempt_review", {"attemptid": attempt_id})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    # Forum WS methods
+    async def get_forum_discussions(self, forum_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_forum_get_forum_discussions", {"forumid": forum_id})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def get_forum_posts(self, discussion_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_forum_get_discussion_posts", {"discussionid": discussion_id})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def add_forum_discussion(self, forum_id: int, subject: str, message: str, user_id: int) -> Dict[str, Any]:
+        url = self._build_url("mod_forum_add_discussion", {
+            "forumid": forum_id,
+            "subject": subject,
+            "message": message,
+        })
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def add_forum_post(self, post_id: int, subject: str, message: str) -> Dict[str, Any]:
+        url = self._build_url("mod_forum_add_discussion_post", {
+            "postid": post_id,
+            "subject": subject,
+            "message": message,
         })
         async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(url)

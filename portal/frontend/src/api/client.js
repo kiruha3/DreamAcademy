@@ -124,3 +124,66 @@ export function markModuleComplete(courseId, cmid) {
 export function fetchCourseProgress(courseId) {
   return apiGet(`/api/courses/${courseId}/progress`)
 }
+
+// Assignment
+export function fetchAssignStatus(courseId, cmid) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/assign/status`)
+}
+
+export function submitAssignment(courseId, cmid, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const headers = {}
+  if (getToken()) headers.Authorization = `Bearer ${getToken()}`
+  return fetch(`${API_BASE}/api/courses/${courseId}/modules/${cmid}/assign/submit`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+}
+
+export function fetchAssignSubmissions(courseId, cmid) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/assign/submissions`)
+}
+
+export function gradeAssignSubmission(courseId, cmid, userId, grade, feedback) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/assign/submissions/${userId}/grade`, { grade, feedback }, true)
+}
+
+// Quiz
+export function startQuiz(courseId, cmid) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/quiz/start`, {}, true)
+}
+
+export function fetchQuizAttempt(courseId, cmid, attemptId, page = 0) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/quiz/attempt/${attemptId}?page=${page}`)
+}
+
+export function saveQuizAttempt(courseId, cmid, attemptId, data) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/quiz/attempt/${attemptId}/save`, { data }, true)
+}
+
+export function finishQuizAttempt(courseId, cmid, attemptId) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/quiz/attempt/${attemptId}/finish`, {}, true)
+}
+
+export function fetchQuizReview(courseId, cmid, attemptId) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/quiz/attempt/${attemptId}/review`)
+}
+
+// Forum
+export function fetchForumDiscussions(courseId, cmid) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/forum/discussions`)
+}
+
+export function createForumDiscussion(courseId, cmid, subject, message) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/forum/discussions`, { subject, message }, true)
+}
+
+export function fetchForumPosts(courseId, cmid, discussionId) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/forum/discussions/${discussionId}/posts`)
+}
+
+export function createForumPost(courseId, cmid, discussionId, subject, message, parentPostId) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/forum/discussions/${discussionId}/posts`, { subject, message, parent_post_id: parentPostId }, true)
+}
