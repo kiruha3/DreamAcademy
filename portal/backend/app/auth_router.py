@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr, validator
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 from typing import Optional
 import secrets
@@ -29,7 +29,8 @@ class RegisterRequest(BaseModel):
     password: str
     role: str = "student"
 
-    @validator("role")
+    @field_validator("role")
+    @classmethod
     def validate_role(cls, v):
         allowed = {"student", "teacher", "course_creator", "admin"}
         if v not in allowed:
