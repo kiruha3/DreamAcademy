@@ -126,3 +126,25 @@ class MoodleClient:
             data = response.json() if text else {}
             self._check_moodle_error(data)
             return data
+
+    async def get_activities_completion_status(self, course_id: int, user_id: int) -> Dict[str, Any]:
+        url = self._build_url("core_completion_get_activities_completion_status", {"courseid": course_id, "userid": user_id})
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data
+
+    async def update_activity_completion_status(self, cmid: int, user_id: int, completed: bool = True) -> Dict[str, Any]:
+        url = self._build_url("core_completion_update_activity_completion_status", {
+            "cmid": cmid,
+            "userid": user_id,
+            "completed": int(completed),
+        })
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            self._check_moodle_error(data)
+            return data

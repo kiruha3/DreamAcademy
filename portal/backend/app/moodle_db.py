@@ -20,6 +20,13 @@ def _connect():
     )
 
 
+def get_module_instance(modname: str, instance_id: int) -> Optional[Dict[str, Any]]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT * FROM {PREFIX}{modname} WHERE id = %s LIMIT 1", (instance_id,))
+            return cur.fetchone()
+
+
 def get_course_contents(course_id: int) -> List[Dict[str, Any]]:
     with _connect() as conn:
         with conn.cursor() as cur:

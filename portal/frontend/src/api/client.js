@@ -112,3 +112,15 @@ export function deleteModule(courseId, cmid) {
     headers,
   }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
 }
+
+export function fetchModuleDetail(courseId, cmid) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}`)
+}
+
+export function markModuleComplete(courseId, cmid) {
+  return apiPost(`/api/courses/${courseId}/modules/${cmid}/complete`, {}, true)
+}
+
+export function fetchCourseProgress(courseId) {
+  return apiGet(`/api/courses/${courseId}/progress`)
+}

@@ -9,6 +9,7 @@ from .my_courses import router as my_courses_router
 from .admin import router as admin_router
 from .course_builder import router as course_builder_router
 from .course_content import router as course_content_router
+from .modules_router import router as modules_router
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -29,6 +30,7 @@ app.include_router(my_courses_router)
 app.include_router(admin_router)
 app.include_router(course_builder_router)
 app.include_router(course_content_router)
+app.include_router(modules_router)
 
 @app.get("/")
 def read_root():
