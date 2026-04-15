@@ -303,3 +303,35 @@ def delete_module(cmid: int) -> None:
                     (new_seq, section_id),
                 )
             conn.commit()
+
+
+def get_course_images(course_ids: List[int], public_url: str, token: str) -> Dict[int, str]:
+    """Return a mapping course_id -> image URL fetched from Moodle DB overviewfiles."""
+    if not course_ids:
+        return {}
+    public_url = public_url.rstrip("/")
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            placeholders = ",".join(["%s"] * len(course_ids))
+            cur.execute(
+                f"""
+                SELECT ctx.instanceid AS course_id, f.contextid, f.itemid, f.filename
+                FROM {PREFIX}files f
+                JOIN {PREFIX}context ctx ON ctx.id = f.contextid
+                WHERE ctx.contextlevel = 50
+                  AND ctx.instanceid IN ({placeholders})
+                  AND f.component = 'course'
+                  AND f.filearea = 'overviewfiles'
+                  AND f.filename != '.'
+                  AND f.filename != ''
+                """,
+                tuple(course_ids),
+            )
+            rows = cur.fetchall()
+            result: Dict[int, str] = {}
+            for row in rows:
+                cid = row["course_id"]
+                if cid not in result:
+                    url = f"{public_url}/webservice/pluginfile.php/{row['contextid']}/course/overviewfiles/{row['itemid']}/{row['filename']}?token={token}"
+                    result[cid] = url
+            return result

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from typing import Dict, Any, List
 from .moodle_client import MoodleClient
 from .config import get_settings
+from . import moodle_db
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -27,6 +28,9 @@ def _fix_moodle_urls(data, internal_url: str, public_url: str):
 
 
 def _extract_course_image(course: Dict[str, Any]) -> str:
+    # Moodle 4.x sometimes returns a direct courseimage field
+    if course.get("courseimage"):
+        return course["courseimage"]
     files = course.get("overviewfiles") or []
     for f in files:
         if isinstance(f, dict) and f.get("fileurl"):
@@ -40,6 +44,12 @@ async def list_courses(client: MoodleClient = Depends(get_moodle_client)) -> Dic
     courses = await client.get_courses()
     courses = courses if isinstance(courses, list) else []
     _fix_moodle_urls(courses, settings.MOODLE_URL, settings.MOODLE_PUBLIC_URL)
+
+    course_ids = [c["id"] for c in courses if isinstance(c, dict)]
+    db_images = moodle_db.get_course_images(course_ids, settings.MOODLE_PUBLIC_URL, settings.MOODLE_TOKEN)
+
     for course in courses:
-        course["imageUrl"] = _extract_course_image(course)
+        cid = course.get("id")
+        image = db_images.get(cid) or _extract_course_image(course)
+        course["imageUrl"] = image
     return {"courses": courses}

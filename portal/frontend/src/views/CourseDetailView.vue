@@ -4,8 +4,16 @@
       <div class="back">
         <router-link to="/courses">← Назад к курсам</router-link>
       </div>
-      <div v-if="courseImage" class="course-hero">
-        <img :src="courseImage" :alt="courseName" class="course-hero-image" />
+      <div class="course-hero">
+        <img
+          v-if="courseImage"
+          :src="courseImage"
+          :alt="courseName"
+          class="course-hero-image"
+        />
+        <div v-else class="course-hero-placeholder">
+          <span class="course-hero-initial">{{ courseInitial }}</span>
+        </div>
       </div>
 
       <h2>{{ courseName }}</h2>
@@ -66,6 +74,10 @@ const progress = ref({ completed: 0, total: 0, modules: [] })
 const progressPercent = computed(() => {
   if (!progress.value.total) return 0
   return Math.round((progress.value.completed / progress.value.total) * 100)
+})
+
+const courseInitial = computed(() => {
+  return courseName.value.trim().charAt(0).toUpperCase()
 })
 
 function typeLabel(modname) {
@@ -149,8 +161,10 @@ onMounted(async () => {
 .back a { color: var(--color-primary); text-decoration: none; font-weight: 500; }
 .back a:hover { text-decoration: underline; }
 .course-detail h2 { font-size: 32px; color: var(--color-dark); margin-bottom: 16px; }
-.course-hero { margin-bottom: 20px; border-radius: 12px; overflow: hidden; }
-.course-hero-image { width: 100%; max-height: 260px; object-fit: cover; display: block; }
+.course-hero { margin-bottom: 20px; border-radius: 12px; overflow: hidden; background: #f3f4f6; }
+.course-hero-image { width: 100%; height: 260px; object-fit: contain; display: block; }
+.course-hero-placeholder { width: 100%; height: 260px; background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 100%); display: flex; align-items: center; justify-content: center; }
+.course-hero-initial { font-size: 120px; font-weight: 700; color: rgba(255,255,255,0.9); line-height: 1; }
 
 .progress-bar-wrap { margin-bottom: 24px; }
 .progress-label { font-size: 14px; color: #374151; margin-bottom: 6px; }
