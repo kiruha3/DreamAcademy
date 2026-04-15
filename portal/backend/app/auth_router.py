@@ -110,7 +110,32 @@ async def register(
 @router.post("/login")
 async def login(req: LoginRequest, db: Session = Depends(get_db), client: MoodleClient = Depends(get_moodle_client)):
     user = db.query(User).filter(User.email == req.email).first()
-    if not user or not verify_password(req.password, user.hashed_password):
+    synced_from_moodle = False
+
+    # If not found locally, try to sync from Moodle on login
+    if not user:
+        try:
+            moodle_users = await client.get_users(key="email", value=req.email)
+            moodle_list = moodle_users.get("users", [])
+            if moodle_list:
+                moodle_user = moodle_list[0]
+                user = User(
+                    email=moodle_user.get("email", req.email),
+                    username=moodle_user.get("username") or moodle_user.get("email", req.email).split("@")[0],
+                    firstname=moodle_user.get("firstname") or "User",
+                    lastname=moodle_user.get("lastname") or "",
+                    hashed_password=get_password_hash(req.password),
+                    role="student",
+                    moodle_user_id=moodle_user["id"],
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                synced_from_moodle = True
+        except Exception:
+            pass  # Fall through to 401 if sync fails
+
+    if not user or (not synced_from_moodle and not verify_password(req.password, user.hashed_password)):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
