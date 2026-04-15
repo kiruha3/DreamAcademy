@@ -1,10 +1,24 @@
 <template>
-  <div class="label-viewer" v-html="sanitized(data.intro || data.content)"></div>
+  <div class="label-viewer" v-html="sanitized(detail.intro || detail.content)"></div>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
+import { fetchModuleDetail } from '@/api/client.js'
+
 const props = defineProps({
   data: { type: Object, required: true }
+})
+
+const detail = ref({ ...props.data })
+
+onMounted(async () => {
+  try {
+    const res = await fetchModuleDetail(props.data.course_id, props.data.cmid)
+    detail.value = { ...detail.value, ...res }
+  } catch (e) {
+    console.error('Failed to load label detail', e)
+  }
 })
 
 function sanitized(html) {

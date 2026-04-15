@@ -1,16 +1,30 @@
 <template>
   <div class="url-viewer">
-    <div v-if="data.intro" class="url-intro" v-html="sanitized(data.intro)"></div>
-    <a :href="data.externalurl" target="_blank" rel="noopener" class="url-link">
+    <div v-if="detail.intro" class="url-intro" v-html="sanitized(detail.intro)"></div>
+    <a :href="detail.externalurl" target="_blank" rel="noopener" class="url-link">
       Перейти по ссылке →
     </a>
-    <span class="url-meta">{{ data.externalurl }}</span>
+    <span class="url-meta">{{ detail.externalurl }}</span>
   </div>
 </template>
 
 <script setup>
+import { ref, onMounted } from 'vue'
+import { fetchModuleDetail } from '@/api/client.js'
+
 const props = defineProps({
   data: { type: Object, required: true }
+})
+
+const detail = ref({ ...props.data })
+
+onMounted(async () => {
+  try {
+    const res = await fetchModuleDetail(props.data.course_id, props.data.cmid)
+    detail.value = { ...detail.value, ...res }
+  } catch (e) {
+    console.error('Failed to load url detail', e)
+  }
 })
 
 function sanitized(html) {
