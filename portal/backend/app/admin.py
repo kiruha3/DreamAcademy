@@ -11,9 +11,13 @@ from .config import get_settings
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 
-def get_moodle_client() -> MoodleClient:
+async def get_moodle_client() -> MoodleClient:
     settings = get_settings()
-    return MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+    client = MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 class CourseCreateRequest(BaseModel):

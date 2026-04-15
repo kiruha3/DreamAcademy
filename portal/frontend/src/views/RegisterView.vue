@@ -44,9 +44,11 @@ const authStore = useAuthStore()
 
 async function handleRegister() {
   error.value = ''
+  const base = email.value.replace(/[^a-zA-Z0-9]/g, '_')
+  const username = base + '_' + Math.floor(Math.random() * 10000)
   const payload = {
     email: email.value,
-    username: email.value.split('@')[0] + '_' + Math.floor(Math.random() * 1000),
+    username,
     firstname: firstname.value,
     lastname: lastname.value,
     password: password.value,

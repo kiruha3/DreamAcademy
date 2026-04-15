@@ -63,12 +63,12 @@ export function createCourse(data) {
 }
 
 export function deleteCourse(courseId) {
-  const headers = { 'Content-Type': 'application/json' }
+  const headers = {}
   if (getToken()) headers.Authorization = `Bearer ${getToken()}`
   return fetch(`${API_BASE}/api/admin/courses/${courseId}`, {
     method: 'DELETE',
     headers,
-  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.status === 204 ? null : r.json() })
 }
 
 export function changePassword(current_password, new_password) {
@@ -92,12 +92,12 @@ export function createSection(courseId, data) {
 }
 
 export function deleteSection(courseId, sectionId) {
-  const headers = { 'Content-Type': 'application/json' }
+  const headers = {}
   if (getToken()) headers.Authorization = `Bearer ${getToken()}`
   return fetch(`${API_BASE}/api/admin/courses/${courseId}/sections/${sectionId}`, {
     method: 'DELETE',
     headers,
-  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.status === 204 ? null : r.json() })
 }
 
 export function createModule(courseId, data) {
@@ -105,12 +105,12 @@ export function createModule(courseId, data) {
 }
 
 export function deleteModule(courseId, cmid) {
-  const headers = { 'Content-Type': 'application/json' }
+  const headers = {}
   if (getToken()) headers.Authorization = `Bearer ${getToken()}`
   return fetch(`${API_BASE}/api/admin/courses/${courseId}/modules/${cmid}`, {
     method: 'DELETE',
     headers,
-  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+  }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.status === 204 ? null : r.json() })
 }
 
 export function fetchModuleDetail(courseId, cmid) {

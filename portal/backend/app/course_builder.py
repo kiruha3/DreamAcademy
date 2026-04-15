@@ -4,15 +4,18 @@ from typing import Dict, Any, List, Optional
 from .security import require_roles, get_current_user
 from .models import User
 from . import moodle_db
+import os
 import subprocess
 router = APIRouter(prefix="/api/admin/courses", tags=["course-builder"])
+
+MOODLE_CONTAINER_NAME = os.getenv("MOODLE_CONTAINER_NAME", "dd_academy_moodle")
 
 
 def _clear_moodle_cache(course_id: int) -> None:
     try:
         subprocess.run(
             [
-                "docker", "exec", "dd_academy_moodle", "php", "-r",
+                "docker", "exec", MOODLE_CONTAINER_NAME, "php", "-r",
                 f"define('CLI_SCRIPT', true); require('/var/www/html/config.php'); rebuild_course_cache({course_id}, true);"
             ],
             capture_output=True,

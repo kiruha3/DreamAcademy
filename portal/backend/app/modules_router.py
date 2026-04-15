@@ -1,6 +1,6 @@
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
@@ -16,9 +16,13 @@ router = APIRouter(prefix="/api/courses", tags=["modules"])
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/submissions")
 
 
-def get_moodle_client() -> MoodleClient:
+async def get_moodle_client() -> MoodleClient:
     settings = get_settings()
-    return MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+    client = MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 def get_user_moodle_client(user_id: int) -> MoodleClient:
@@ -195,7 +199,7 @@ async def submit_assignment(
     existing = db.query(Submission).filter(Submission.cmid == cmid, Submission.user_id == current_user.id).first()
     if existing:
         existing.file_path = file_path
-        existing.submitted_at = datetime.utcnow()
+        existing.submitted_at = datetime.now(timezone.utc)
         existing.grade = None
         existing.feedback = None
         existing.graded_at = None
@@ -253,7 +257,7 @@ async def grade_assignment_submission(
         raise HTTPException(status_code=404, detail="Submission not found")
     sub.grade = payload.grade
     sub.feedback = payload.feedback
-    sub.graded_at = datetime.utcnow()
+    sub.graded_at = datetime.now(timezone.utc)
     db.commit()
 
     # Sync to Moodle if possible
@@ -296,8 +300,8 @@ async def start_quiz(
     if not target or target.get("modname") != "quiz":
         raise HTTPException(status_code=404, detail="Quiz not found")
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        result = await user_client.start_quiz_attempt(target["instance"])
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            result = await user_client.start_quiz_attempt(target["instance"])
         return result
     except Exception as e:
         msg = str(e)
@@ -315,8 +319,8 @@ async def get_quiz_attempt(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        data = await user_client.get_attempt_data(attempt_id, page)
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            data = await user_client.get_attempt_data(attempt_id, page)
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get attempt: {str(e)}")
@@ -335,8 +339,8 @@ async def save_quiz_attempt_api(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        result = await user_client.save_quiz_attempt(attempt_id, payload.data)
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            result = await user_client.save_quiz_attempt(attempt_id, payload.data)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save attempt: {str(e)}")
@@ -350,8 +354,8 @@ async def finish_quiz_attempt_api(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        result = await user_client.finish_quiz_attempt(attempt_id)
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            result = await user_client.finish_quiz_attempt(attempt_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to finish attempt: {str(e)}")
@@ -366,8 +370,8 @@ async def review_quiz_attempt(
     client: MoodleClient = Depends(get_moodle_client),
 ) -> Dict[str, Any]:
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        result = await user_client.get_attempt_review(attempt_id)
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            result = await user_client.get_attempt_review(attempt_id)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get review: {str(e)}")
@@ -427,8 +431,8 @@ async def create_forum_discussion(
     if not current_user.moodle_user_id:
         raise HTTPException(status_code=400, detail="User not linked to Moodle")
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        result = await user_client.add_forum_discussion(target["instance"], payload.subject, payload.message, current_user.moodle_user_id)
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            result = await user_client.add_forum_discussion(target["instance"], payload.subject, payload.message)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create discussion: {str(e)}")
@@ -464,8 +468,8 @@ async def create_forum_post_api(
     current_user: User = Depends(get_current_user),
 ) -> Dict[str, Any]:
     try:
-        user_client = get_user_moodle_client(current_user.moodle_user_id)
-        result = await user_client.add_forum_post(payload.parent_post_id, payload.subject, payload.message)
+        async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
+            result = await user_client.add_forum_post(payload.parent_post_id, payload.subject, payload.message)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create post: {str(e)}")

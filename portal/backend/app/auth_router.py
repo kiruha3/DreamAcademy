@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from sqlalchemy.orm import Session
 from typing import Optional
 import secrets
@@ -12,9 +12,13 @@ from .moodle_client import MoodleClient
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def get_moodle_client() -> MoodleClient:
+async def get_moodle_client() -> MoodleClient:
     settings = get_settings()
-    return MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+    client = MoodleClient(base_url=settings.MOODLE_URL, token=settings.MOODLE_TOKEN)
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 class RegisterRequest(BaseModel):
@@ -24,6 +28,13 @@ class RegisterRequest(BaseModel):
     lastname: str
     password: str
     role: str = "student"
+
+    @validator("role")
+    def validate_role(cls, v):
+        allowed = {"student", "teacher", "course_creator", "admin"}
+        if v not in allowed:
+            raise ValueError(f"role must be one of {allowed}")
+        return v
 
 
 class LoginRequest(BaseModel):
@@ -45,8 +56,7 @@ class UserOut(BaseModel):
     role: str
     moodle_user_id: Optional[int] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 @router.post("/register")
