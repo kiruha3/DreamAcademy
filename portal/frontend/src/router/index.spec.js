@@ -9,6 +9,7 @@ const routes = [
   { path: '/login', name: 'Login', component: { template: '<div>Login</div>' }, meta: { guestOnly: true } },
   { path: '/dashboard', name: 'Dashboard', component: { template: '<div>Dashboard</div>' }, meta: { requiresAuth: true } },
   { path: '/admin', name: 'Admin', component: { template: '<div>Admin</div>' }, meta: { requiresAuth: true, roles: ['admin', 'teacher', 'course_creator'] } },
+  { path: '/courses/:id', name: 'CourseDetail', component: { template: '<div>Course</div>' }, meta: { requiresAuth: true } },
 ]
 
 describe('Router guards', () => {
@@ -67,6 +68,26 @@ describe('Router guards', () => {
 
     await router.push('/dashboard')
     expect(router.currentRoute.value.path).toBe('/dashboard')
+  })
+
+  it('redirects unauthenticated user from /courses/1 to /login', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    router.beforeEach((to, from, next) => {
+      const authStore = useAuthStore()
+      if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+        return next('/login')
+      }
+      if (to.meta.guestOnly && authStore.isAuthenticated) {
+        return next('/dashboard')
+      }
+      if (to.meta.roles && (!authStore.user || !to.meta.roles.includes(authStore.user.role))) {
+        return next('/')
+      }
+      next()
+    })
+
+    await router.push('/courses/1')
+    expect(router.currentRoute.value.path).toBe('/login')
   })
 
   it('redirects student from /admin to /', async () => {

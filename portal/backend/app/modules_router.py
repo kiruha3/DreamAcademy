@@ -31,12 +31,28 @@ def get_user_moodle_client(user_id: int) -> MoodleClient:
     return MoodleClient(base_url=settings.MOODLE_URL, token=user_token)
 
 
+async def require_course_access(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> None:
+    if current_user.role in {"admin", "teacher", "course_creator"}:
+        return
+    if not current_user.moodle_user_id:
+        raise HTTPException(status_code=403, detail="Not enrolled in this course")
+    user_courses = await client.get_user_courses(current_user.moodle_user_id)
+    enrolled_ids = {c.get("id") for c in user_courses} if isinstance(user_courses, list) else set()
+    if course_id not in enrolled_ids:
+        raise HTTPException(status_code=403, detail="Not enrolled in this course")
+
+
 @router.get("/{course_id}/modules/{cmid}")
 async def get_module_detail(
     course_id: int,
     cmid: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     contents = await client.get_course_contents(course_id)
     target_module = None
@@ -101,6 +117,7 @@ async def mark_module_complete(
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
     db: Session = Depends(get_db),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     if not current_user.moodle_user_id:
         raise HTTPException(status_code=400, detail="User not linked to Moodle")
@@ -133,6 +150,7 @@ async def get_course_progress(
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
     db: Session = Depends(get_db),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     if not current_user.moodle_user_id:
         return {"course_id": course_id, "modules": [], "completed_count": 0, "total_count": 0}
@@ -202,6 +220,7 @@ async def get_assignment_status(
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
     db: Session = Depends(get_db),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     contents = await client.get_course_contents(course_id)
     target = None
@@ -242,6 +261,7 @@ async def submit_assignment(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     course_dir = os.path.join(UPLOAD_DIR, str(course_id), str(cmid))
     os.makedirs(course_dir, exist_ok=True)
@@ -304,6 +324,7 @@ async def grade_assignment_submission(
     current_user: User = Depends(require_roles(["admin", "teacher", "course_creator"])),
     db: Session = Depends(get_db),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     sub = db.query(Submission).filter(Submission.cmid == cmid, Submission.user_id == user_id).first()
     if not sub:
@@ -340,6 +361,7 @@ async def start_quiz(
     cmid: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     contents = await client.get_course_contents(course_id)
     target = None
@@ -370,6 +392,7 @@ async def get_quiz_attempt(
     attempt_id: int,
     page: int = 0,
     current_user: User = Depends(get_current_user),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     try:
         async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
@@ -390,6 +413,7 @@ async def save_quiz_attempt_api(
     attempt_id: int,
     payload: QuizSavePayload,
     current_user: User = Depends(get_current_user),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     try:
         async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
@@ -405,6 +429,7 @@ async def finish_quiz_attempt_api(
     cmid: int,
     attempt_id: int,
     current_user: User = Depends(get_current_user),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     try:
         async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
@@ -421,6 +446,7 @@ async def review_quiz_attempt(
     attempt_id: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     try:
         async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
@@ -438,6 +464,7 @@ async def list_forum_discussions(
     cmid: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     contents = await client.get_course_contents(course_id)
     target = None
@@ -469,6 +496,7 @@ async def create_forum_discussion(
     payload: DiscussionPayload,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     contents = await client.get_course_contents(course_id)
     target = None
@@ -498,6 +526,7 @@ async def get_forum_posts_api(
     discussion_id: int,
     current_user: User = Depends(get_current_user),
     client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     try:
         result = await client.get_forum_posts(discussion_id)
@@ -519,6 +548,7 @@ async def create_forum_post_api(
     discussion_id: int,
     payload: PostPayload,
     current_user: User = Depends(get_current_user),
+    _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
     try:
         async with get_user_moodle_client(current_user.moodle_user_id) as user_client:

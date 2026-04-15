@@ -13,7 +13,7 @@ const routes = [
   { path: '/login', name: 'Login', component: LoginView, meta: { guestOnly: true } },
   { path: '/register', name: 'Register', component: RegisterView, meta: { guestOnly: true } },
   { path: '/courses', name: 'Courses', component: CoursesView },
-  { path: '/courses/:id', name: 'CourseDetail', component: CourseDetailView },
+  { path: '/courses/:id', name: 'CourseDetail', component: CourseDetailView, meta: { requiresAuth: true } },
   { path: '/dashboard', name: 'Dashboard', component: DashboardView, meta: { requiresAuth: true } },
   { path: '/admin', name: 'Admin', component: AdminView, meta: { requiresAuth: true, roles: ['admin', 'teacher', 'course_creator'] } },
 ]

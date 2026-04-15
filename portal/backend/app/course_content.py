@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from typing import Dict, Any
 from .moodle_client import MoodleClient
 from .config import get_settings
+from .modules_router import require_course_access
 
 router = APIRouter(prefix="/api/courses", tags=["course-content"])
 
@@ -28,7 +29,11 @@ def _fix_moodle_urls(data, internal_url: str, public_url: str):
 
 
 @router.get("/{course_id}/contents")
-async def get_course_content(course_id: int, client: MoodleClient = Depends(get_moodle_client)) -> Dict[str, Any]:
+async def get_course_content(
+    course_id: int,
+    _course_access: None = Depends(require_course_access),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
     settings = get_settings()
     contents = await client.get_course_contents(course_id)
     _fix_moodle_urls(contents, settings.MOODLE_URL, settings.MOODLE_PUBLIC_URL)
