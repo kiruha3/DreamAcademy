@@ -8,7 +8,11 @@ async function apiGet(path) {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) },
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`)
+    err.status = res.status
+    throw err
+  }
   return res.json()
 }
 
@@ -22,7 +26,11 @@ async function apiPost(path, body, auth = false) {
     headers,
     body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status}`)
+    err.status = res.status
+    throw err
+  }
   return res.json()
 }
 
