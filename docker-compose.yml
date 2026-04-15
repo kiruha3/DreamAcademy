@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: mysql:8.0
@@ -22,26 +20,21 @@ services:
       retries: 5
 
   moodle:
-    image: bitnami/moodle:4.4
+    build: ./moodle
     container_name: dd_academy_moodle
     environment:
       MOODLE_DATABASE_HOST: db
       MOODLE_DATABASE_NAME: moodle
       MOODLE_DATABASE_USER: moodle
       MOODLE_DATABASE_PASSWORD: moodlesecret
-      MOODLE_USERNAME: admin
-      MOODLE_PASSWORD: AdminPass123!
-      MOODLE_EMAIL: admin@dreamdocs.local
-      MOODLE_SITE_NAME: "DreamDocs Academy"
-      MOODLE_HOST: localhost
     ports:
-      - "8080:8080"
+      - "8080:80"
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - moodle_data:/bitnami/moodle
-      - moodledata_data:/bitnami/moodledata
+      - moodle_data:/var/www/html
+      - moodledata_data:/var/www/moodledata
     networks:
       - academy_net
 
@@ -49,7 +42,8 @@ services:
     build: ./portal/backend
     container_name: dd_academy_backend
     environment:
-      - MOODLE_URL=http://moodle:8080
+      - MOODLE_URL=http://moodle
+      - MOODLE_PUBLIC_URL=http://localhost:8080
       - MOODLE_TOKEN=${MOODLE_TOKEN}
     ports:
       - "8000:8000"
@@ -59,11 +53,14 @@ services:
       - academy_net
     volumes:
       - ./portal/backend/app:/app/app
+      - backend_data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   db_data:
   moodle_data:
   moodledata_data:
+  backend_data:
 
 networks:
   academy_net:

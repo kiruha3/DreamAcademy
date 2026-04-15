@@ -11,6 +11,7 @@
           <label>Пароль</label>
           <input v-model="password" type="password" required />
         </div>
+        <div v-if="error" class="error">{{ error }}</div>
         <button type="submit" class="btn-primary btn-full">Войти</button>
       </form>
       <div class="auth-links">
@@ -22,11 +23,24 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
 
 const email = ref('')
 const password = ref('')
+const error = ref('')
+const router = useRouter()
+const authStore = useAuthStore()
 
-function handleLogin() {
-  alert('Авторизация будет реализована после интеграции с Moodle SSO')
+async function handleLogin() {
+  error.value = ''
+  console.log('Login attempt:', email.value, password.value)
+  try {
+    await authStore.signIn(email.value, password.value)
+    router.push('/dashboard')
+  } catch (e) {
+    console.error('Login error:', e)
+    error.value = 'Неверный email или пароль'
+  }
 }
 </script>

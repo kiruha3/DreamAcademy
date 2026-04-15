@@ -5,24 +5,36 @@
       <p v-if="loading" class="loading">Загрузка курсов...</p>
       <p v-else-if="error" class="loading">Ошибка загрузки: {{ error }}</p>
       <div v-else class="courses-grid">
-        <CourseCard v-for="course in visibleCourses" :key="course.id" :course="course" />
+        <CourseCard
+          v-for="course in visibleCourses"
+          :key="course.id"
+          :course="course"
+          @invite="openInvite"
+        />
       </div>
     </div>
+    <InviteModal v-if="inviteCourseId" :course-id="inviteCourseId" @close="inviteCourseId = null" />
   </section>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { fetchCourses } from '../api/client.js'
-import CourseCard from '../components/CourseCard.vue'
+import { fetchCourses } from '@/api/client.js'
+import CourseCard from '@/components/CourseCard.vue'
+import InviteModal from '@/components/InviteModal.vue'
 
 const courses = ref([])
 const loading = ref(true)
 const error = ref(null)
+const inviteCourseId = ref(null)
 
 const visibleCourses = computed(() =>
   courses.value.filter(c => c.id !== 1)
 )
+
+function openInvite(courseId) {
+  inviteCourseId.value = courseId
+}
 
 onMounted(async () => {
   try {

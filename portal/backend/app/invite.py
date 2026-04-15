@@ -5,6 +5,8 @@ from typing import Literal
 from .moodle_client import MoodleClient
 from .config import get_settings
 from .moodle_roles import get_moodle_role_id
+from .security import get_current_user, require_roles
+from .models import User
 
 router = APIRouter(prefix="/api/courses", tags=["invites"])
 
@@ -22,7 +24,8 @@ async def invite_to_course(
     course_id: int,
     invite: InviteRequest,
     role: Literal["student", "teacher", "course_creator", "admin"] = Query(default="student"),
-    client: MoodleClient = Depends(get_moodle_client)
+    client: MoodleClient = Depends(get_moodle_client),
+    current_user: User = Depends(require_roles(["admin", "teacher", "course_creator"])),
 ):
     users = await client.get_users(key="email", value=invite.email)
     user_list = users.get("users", [])
@@ -30,7 +33,7 @@ async def invite_to_course(
     if user_list:
         user_id = user_list[0]["id"]
     else:
-        temp_password = secrets.token_urlsafe(12)
+        temp_password = secrets.token_urlsafe(10) + "A1!"
         base_username = invite.email.replace("@", "_").replace(".", "_")
         username = f"{base_username}_{secrets.token_hex(3)}"
         created = await client.create_user(
@@ -54,5 +57,5 @@ async def invite_to_course(
         "user_id": user_id,
         "email": invite.email,
         "role": role,
-        # "temp_password": temp_password,  # TODO: отправлять по email, не возвращать в API
+        "temp_password": temp_password,
     }

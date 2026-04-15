@@ -2,12 +2,24 @@
   <div class="course-card">
     <h3>{{ course.fullname || course.shortname || 'Курс' }}</h3>
     <p>{{ stripHtml(course.summary) || 'Описание появится позже' }}</p>
-    <router-link :to="`/courses/${course.id}`" class="btn-primary">Подробнее</router-link>
+    <div class="actions">
+      <router-link :to="`/courses/${course.id}`" class="btn-primary">Подробнее</router-link>
+      <button v-if="canInvite" class="btn-secondary" @click="$emit('invite', course.id)">Пригласить</button>
+    </div>
   </div>
 </template>
 
 <script setup>
-defineProps({ course: { type: Object, required: true } })
+import { computed } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+
+const props = defineProps({ course: { type: Object, required: true } })
+defineEmits(['invite'])
+
+const authStore = useAuthStore()
+const canInvite = computed(() => {
+  return ['admin', 'teacher', 'course_creator'].includes(authStore.user?.role)
+})
 
 function stripHtml(html) {
   if (!html) return ''
@@ -26,4 +38,6 @@ function stripHtml(html) {
 }
 .course-card h3 { color: var(--color-dark); margin-bottom: 8px; }
 .course-card p { margin-bottom: 16px; flex: 1; }
+.actions { display: flex; gap: 10px; }
+.actions .btn-secondary { background: #e5e7eb; color: #374151; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; text-decoration: none; font-size: 14px; }
 </style>

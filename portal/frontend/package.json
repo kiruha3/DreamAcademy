@@ -10,13 +10,14 @@
     "test": "vitest"
   },
   "dependencies": {
+    "pinia": "^3.0.4",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
+    "@vue/test-utils": "^2.4.5",
     "vite": "^5.2.0",
-    "vitest": "^1.4.0",
-    "@vue/test-utils": "^2.4.5"
+    "vitest": "^1.4.0"
   }
 }
