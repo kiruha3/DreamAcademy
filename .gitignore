@@ -1,0 +1,61 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+venv/
+.env/
+env/
+
+# Secrets & environment
+.env
+.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Docker volumes (persisted data, not source code)
+db_data/
+moodle_data/
+moodledata_data/
+
+# graphify output (rebuilt locally)
+graphify-out/
+.graphify_*
+
+# Uploaded content / large binaries
+uploads/
+*.mp4
+*.mov
+*.mp3
+*.wav
+*.pdf
