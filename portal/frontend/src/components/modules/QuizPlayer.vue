@@ -10,11 +10,14 @@
     </div>
 
     <div v-else-if="reviewData" class="quiz-review">
-      <h4>Результат</h4>
-      <div v-if="hasReviewScore" class="review-score">Балл: {{ reviewData.grade || reviewData.mark }} / {{ reviewData.grade?.maxgrade || quizMeta.sumgrades }}</div>
-      <div v-else class="review-score">Тест завершён</div>
+      <div class="review-summary">
+        <div class="review-score-box">
+          <span v-if="hasReviewScore">Балл: {{ reviewData.grade }} / {{ reviewData.grade?.maxgrade || quizMeta.sumgrades }}</span>
+          <span v-else>Тест завершён</span>
+        </div>
+      </div>
       <div v-for="q in reviewData.questions" :key="q.slot" class="review-question">
-        <div v-html="sanitized(q.html)"></div>
+        <div v-html="sanitizeReviewHtml(q.html)"></div>
       </div>
       <button class="btn-secondary" @click="reset">Закрыть результат</button>
     </div>
@@ -61,6 +64,16 @@ const currentIndex = ref(0)
 const answers = ref({})
 const reviewData = ref(null)
 const quizMeta = ref({})
+
+const reviewKey = `quiz-review-${props.data.cmid}`
+const savedReview = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(reviewKey) : null
+if (savedReview) {
+  try {
+    reviewData.value = JSON.parse(savedReview)
+  } catch (e) {
+    console.error('Failed to parse saved review', e)
+  }
+}
 
 const hasReviewScore = computed(() => {
   return reviewData.value && (reviewData.value.grade != null || reviewData.value.mark != null)
@@ -248,9 +261,15 @@ async function finish() {
     try {
       const review = await fetchQuizReview(props.data.course_id, props.data.cmid, attemptId.value)
       reviewData.value = review
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(reviewKey, JSON.stringify(review))
+      }
     } catch (reviewErr) {
       console.warn('Review not available', reviewErr)
       reviewData.value = { grade: null, mark: null, questions: [] }
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(reviewKey, JSON.stringify(reviewData.value))
+      }
     }
     try {
       await markModuleComplete(props.data.course_id, props.data.cmid)
@@ -273,12 +292,25 @@ function reset() {
   answers.value = {}
   reviewData.value = null
   currentIndex.value = 0
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem(reviewKey)
+  }
 }
 
 function sanitized(html) {
   if (!html) return ''
   const allowed = /<(\/?)(b|i|em|strong|u|p|br|hr|h[1-6]|ul|ol|li|div|span|a|img|table|thead|tbody|tr|td|th|blockquote|pre|code|sup|sub)(\s+[^>]*)?>/gi
   return html.replace(/<[^>]+>/g, (tag) => {
+    return allowed.test(tag) ? tag : ''
+  })
+}
+
+function sanitizeReviewHtml(html) {
+  if (!html) return ''
+  const noScript = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+  const noStyle = noScript.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+  const allowed = /<(\/?)(b|i|em|strong|u|p|br|hr|h[1-6]|ul|ol|li|div|span|a|img|table|thead|tbody|tr|td|th|blockquote|pre|code|sup|sub)(\s+[^>]*)?>/gi
+  return noStyle.replace(/<[^>]+>/g, (tag) => {
     return allowed.test(tag) ? tag : ''
   })
 }
@@ -296,6 +328,15 @@ function sanitized(html) {
 .attempt-nav { display: flex; gap: 10px; margin-top: 16px; }
 .finish { background: #dc2626; }
 .quiz-review { }
-.review-score { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+.review-summary { margin-bottom: 16px; }
+.review-score-box { background: #f0f9ff; border: 1px solid #bae6fd; padding: 12px 16px; border-radius: 8px; font-size: 16px; font-weight: 600; color: #0c4a6e; }
 .review-question { padding: 10px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 10px; background: #fff; }
+.review-question :deep(.que.correct) { background: #f0fdf4; border-color: #bbf7d0; }
+.review-question :deep(.que.incorrect) { background: #fef2f2; border-color: #fecaca; }
+.review-question :deep(.que.partiallycorrect) { background: #fefce8; border-color: #fde047; }
+.review-question :deep(.rightanswer) { color: #15803d; font-weight: 600; }
+.review-question :deep(.feedback) { background: #f8fafc; border-left: 3px solid var(--color-primary); padding: 8px 12px; margin-top: 8px; border-radius: 0 6px 6px 0; }
+.review-question :deep(.info) { background: #fff; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 8px; }
+.review-question :deep(.state) { font-size: 13px; font-weight: 500; }
+.review-question :deep(.gradingdetails) { font-size: 12px; color: #6b7280; margin-top: 6px; }
 </style>

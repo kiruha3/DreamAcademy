@@ -41,7 +41,7 @@
                 </div>
 
                 <div class="mod-renderer">
-                  <ModuleRenderer :data="mod" @module-finished="loadProgress" />
+                  <ModuleRenderer :data="mod" @module-finished="handleModuleFinished(mod.id, mod.modname)" />
                 </div>
 
                 <div class="mod-actions">
@@ -100,8 +100,27 @@ function isCompleted(cmid) {
 }
 
 function canComplete(modname) {
-  // Keep manual fallback for modules that may fail auto-complete
-  return ['page', 'url', 'label', 'book', 'forum'].includes(modname)
+  // Keep manual fallback for all modules
+  return ['page', 'url', 'label', 'book', 'forum', 'quiz', 'assign', 'resource'].includes(modname)
+}
+
+let refreshTimeout = null
+function scheduleProgressRefresh() {
+  if (refreshTimeout) clearTimeout(refreshTimeout)
+  refreshTimeout = setTimeout(() => {
+    loadProgress()
+  }, 600)
+}
+
+function handleModuleFinished(cmid, modname) {
+  const m = progress.value.modules.find(item => item.cmid === cmid)
+  if (m && !m.completed) {
+    m.completed = true
+    progress.value.completed++
+  }
+  if (modname === 'quiz' || modname === 'assign') {
+    scheduleProgressRefresh()
+  }
 }
 
 function getResult(cmid) {
