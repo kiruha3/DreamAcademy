@@ -123,14 +123,21 @@ function handleModuleFinished(cmid, modname) {
   }
 }
 
+function formatGrade(value) {
+  if (value === undefined || value === null) return ''
+  const num = Number(value)
+  if (Number.isNaN(num)) return String(value)
+  return Number.isInteger(num) ? String(num) : num.toFixed(2)
+}
+
 function getResult(cmid) {
   const m = progress.value.modules.find(m => m.cmid === cmid)
   if (!m || !m.result) return ''
   if (m.modname === 'quiz' && m.result.grade != null && m.result.max_grade) {
-    return `Балл: ${m.result.grade} / ${m.result.max_grade}`
+    return `Балл: ${formatGrade(m.result.grade)} / ${formatGrade(m.result.max_grade)}`
   }
   if (m.modname === 'assign') {
-    if (m.result.grade != null) return `Оценка: ${m.result.grade}`
+    if (m.result.grade != null) return `Оценка: ${formatGrade(m.result.grade)}`
     if (m.result.status === 'submitted') return 'Сдано'
     if (m.result.status === 'graded') return 'Оценено'
   }

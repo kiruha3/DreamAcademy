@@ -524,6 +524,22 @@ async def finish_quiz_attempt_api(
                 grade = review.get("grade")
                 if isinstance(grade, dict):
                     grade = grade.get("grade")
+                if isinstance(grade, str):
+                    try:
+                        grade = float(grade)
+                    except ValueError:
+                        grade = None
+                if grade is None:
+                    raw_mark = review.get("mark")
+                    if isinstance(raw_mark, str):
+                        parts = raw_mark.split("/")
+                        if parts:
+                            try:
+                                grade = float(parts[0].strip())
+                            except ValueError:
+                                grade = None
+                    elif isinstance(raw_mark, (int, float)):
+                        grade = float(raw_mark)
             except Exception:
                 pass
 

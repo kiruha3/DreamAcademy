@@ -12,12 +12,15 @@
     <div v-else-if="reviewData" class="quiz-review">
       <div class="review-summary">
         <div class="review-score-box">
-          <span v-if="hasReviewScore">Балл: {{ reviewData.grade }} / {{ reviewData.grade?.maxgrade || quizMeta.sumgrades }}</span>
+          <span v-if="hasReviewScore">Балл: {{ formatGrade(reviewData.grade) }} / {{ formatGrade(quizMeta.sumgrades) }}</span>
           <span v-else>Тест завершён</span>
         </div>
       </div>
       <div v-for="q in reviewData.questions" :key="q.slot" class="review-question">
         <div v-html="sanitizeReviewHtml(q.html)"></div>
+        <div v-if="q.grade != null || q.mark != null" class="question-grade">
+          Балл за вопрос: {{ formatGrade(q.grade ?? q.mark) }}
+        </div>
       </div>
       <button class="btn-secondary" @click="reset">Закрыть результат</button>
     </div>
@@ -305,6 +308,13 @@ function sanitized(html) {
   })
 }
 
+function formatGrade(value) {
+  if (value === undefined || value === null) return '—'
+  const num = Number(value)
+  if (Number.isNaN(num)) return String(value)
+  return Number.isInteger(num) ? String(num) : num.toFixed(2)
+}
+
 function sanitizeReviewHtml(html) {
   if (!html) return ''
   const noScript = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
@@ -339,4 +349,5 @@ function sanitizeReviewHtml(html) {
 .review-question :deep(.info) { background: #fff; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px; margin-bottom: 8px; }
 .review-question :deep(.state) { font-size: 13px; font-weight: 500; }
 .review-question :deep(.gradingdetails) { font-size: 12px; color: #6b7280; margin-top: 6px; }
+.question-grade { font-size: 13px; color: #0c4a6e; font-weight: 500; margin-top: 6px; padding: 4px 8px; background: #f0f9ff; border-radius: 6px; display: inline-block; }
 </style>
