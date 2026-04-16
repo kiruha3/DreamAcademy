@@ -54,11 +54,12 @@ function stripHtml(html) {
   flex-direction: column;
   overflow: hidden;
 }
-.course-media { width: 100%; height: 160px; }
+.course-media { width: 100%; height: 160px; display: flex; align-items: center; justify-content: center; background: #f3f4f6; }
 .course-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 100%;
+  max-height: 160px;
+  width: auto;
+  height: auto;
   display: block;
 }
 .course-image-placeholder {

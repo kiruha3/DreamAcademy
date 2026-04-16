@@ -29,7 +29,7 @@ global \$CFG;
 \$CFG->dbpass    = '$DB_PASS';
 \$CFG->prefix    = 'mdl_';
 \$CFG->dboptions = ['dbpersist' => false, 'dbport' => 3306, 'dbsocket' => ''];
-\$CFG->wwwroot   = 'http://localhost:8080';
+\$CFG->wwwroot   = 'http://localhost:62080';
 \$CFG->dataroot  = '/var/www/moodledata';
 \$CFG->admin     = 'admin';
 \$CFG->directorypermissions = 02777;

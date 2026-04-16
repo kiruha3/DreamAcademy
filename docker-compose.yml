@@ -28,7 +28,7 @@ services:
       MOODLE_DATABASE_USER: moodle
       MOODLE_DATABASE_PASSWORD: moodlesecret
     ports:
-      - "8080:80"
+      - "62080:80"
     depends_on:
       db:
         condition: service_healthy
@@ -43,7 +43,7 @@ services:
     container_name: dd_academy_backend
     environment:
       - MOODLE_URL=http://moodle
-      - MOODLE_PUBLIC_URL=http://localhost:8080
+      - MOODLE_PUBLIC_URL=http://localhost:62080
       - MOODLE_TOKEN=${MOODLE_TOKEN}
     ports:
       - "8000:8000"

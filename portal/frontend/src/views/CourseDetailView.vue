@@ -161,8 +161,8 @@ onMounted(async () => {
 .back a { color: var(--color-primary); text-decoration: none; font-weight: 500; }
 .back a:hover { text-decoration: underline; }
 .course-detail h2 { font-size: 32px; color: var(--color-dark); margin-bottom: 16px; }
-.course-hero { margin-bottom: 20px; border-radius: 12px; overflow: hidden; background: #f3f4f6; }
-.course-hero-image { width: 100%; height: 260px; object-fit: contain; display: block; }
+.course-hero { margin-bottom: 20px; border-radius: 12px; overflow: hidden; background: #f3f4f6; text-align: center; min-height: 120px; }
+.course-hero-image { max-width: 100%; max-height: 260px; width: auto; height: auto; display: inline-block; }
 .course-hero-placeholder { width: 100%; height: 260px; background: linear-gradient(135deg, var(--color-primary-light) 0%, var(--color-primary) 100%); display: flex; align-items: center; justify-content: center; }
 .course-hero-initial { font-size: 120px; font-weight: 700; color: rgba(255,255,255,0.9); line-height: 1; }
 
