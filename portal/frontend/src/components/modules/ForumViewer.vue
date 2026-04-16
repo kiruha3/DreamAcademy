@@ -38,12 +38,14 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { fetchForumDiscussions, createForumDiscussion } from '@/api/client.js'
+import { fetchForumDiscussions, createForumDiscussion, markModuleComplete } from '@/api/client.js'
 import ForumDiscussion from './ForumDiscussion.vue'
 
 const props = defineProps({
   data: { type: Object, required: true }
 })
+
+const emit = defineEmits(['finished'])
 
 const discussions = ref([])
 const loading = ref(true)
@@ -55,6 +57,12 @@ const sending = ref(false)
 
 onMounted(async () => {
   await loadDiscussions()
+  try {
+    await markModuleComplete(props.data.course_id, props.data.cmid)
+    emit('finished')
+  } catch (e) {
+    console.error('Failed to mark forum complete', e)
+  }
 })
 
 async function loadDiscussions() {

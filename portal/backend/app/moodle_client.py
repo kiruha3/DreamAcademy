@@ -1,4 +1,9 @@
+import asyncio
+import base64
 import httpx
+import json
+import os
+import subprocess
 from typing import Dict, Any, Optional
 from urllib.parse import urlencode
 
@@ -120,12 +125,68 @@ class MoodleClient:
         self._check_moodle_error(data)
         return data
 
+    async def update_course(self, course_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
+        params = {"courses[0][id]": course_id}
+        for key, value in fields.items():
+            params[f"courses[0][{key}]"] = value
+        url = self._build_url("core_course_update_courses", params)
+        response = await self.client.get(url)
+        response.raise_for_status()
+        data = response.json()
+        self._check_moodle_error(data)
+        return data
+
     async def delete_course(self, course_id: int) -> Dict[str, Any]:
         url = self._build_url("core_course_delete_courses", {"courseids[0]": course_id})
         response = await self.client.get(url)
         response.raise_for_status()
         text = response.text
         data = response.json() if text else {}
+        self._check_moodle_error(data)
+        return data
+
+    async def create_category(self, name: str, parent: int = 0, idnumber: str = "") -> Dict[str, Any]:
+        params = {
+            "categories[0][name]": name,
+            "categories[0][parent]": parent,
+            "categories[0][idnumber]": idnumber,
+        }
+        url = self._build_url("core_course_create_categories", params)
+        response = await self.client.get(url)
+        response.raise_for_status()
+        data = response.json()
+        self._check_moodle_error(data)
+        return data
+
+    async def list_categories(self, criteria: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        params = {}
+        if criteria:
+            for idx, (key, value) in enumerate(criteria.items()):
+                params[f"criteria[{idx}][key]"] = key
+                params[f"criteria[{idx}][value]"] = value
+        url = self._build_url("core_course_get_categories", params)
+        response = await self.client.get(url)
+        response.raise_for_status()
+        data = response.json()
+        self._check_moodle_error(data)
+        return data
+
+    async def upload_file(self, file_bytes: bytes, filename: str, filearea: str = "draft", itemid: int = 0) -> Dict[str, Any]:
+        url = f"{self.base_url}/webservice/upload.php?token={self.token}&filearea={filearea}&itemid={itemid}"
+        files = {"file_1": (filename, file_bytes)}
+        response = await self.client.post(url, files=files)
+        response.raise_for_status()
+        data = response.json()
+        if isinstance(data, list) and len(data) > 0 and "error" in data[0]:
+            raise RuntimeError(f"Moodle upload error: {data[0].get('error', 'Unknown')}")
+        self._check_moodle_error(data)
+        return data
+
+    async def list_external_functions(self) -> Dict[str, Any]:
+        url = self._build_url("core_webservice_get_site_info")
+        response = await self.client.get(url)
+        response.raise_for_status()
+        data = response.json()
         self._check_moodle_error(data)
         return data
 
@@ -206,27 +267,30 @@ class MoodleClient:
         self._check_moodle_error(data)
         return data
 
+    async def _call_process_attempt_php(self, attempt_id: int, data_seq: list, finishattempt: bool = False) -> Dict[str, Any]:
+        # Moodle process_attempt only expects name/value pairs; strip extra keys like slot
+        cleaned = [{"name": d["name"], "value": d["value"]} for d in data_seq]
+        data_json = json.dumps(cleaned)
+        data_b64 = base64.b64encode(data_json.encode("utf-8")).decode("utf-8")
+        cmd = [
+            "docker", "exec", os.getenv("MOODLE_CONTAINER_NAME", "dd_academy_moodle"),
+            "php", "/var/www/html/moodle_process_attempt.php",
+            str(attempt_id), data_b64, "1" if finishattempt else "0",
+        ]
+        result = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(f"PHP script failed: {result.stderr or result.stdout}")
+        output = result.stdout.strip().split("\n")[-1]
+        parsed = json.loads(output)
+        if not parsed.get("success"):
+            raise RuntimeError(f"Moodle process attempt error: {parsed.get('error')}")
+        return parsed["result"]
+
     async def save_quiz_attempt(self, attempt_id: int, data_seq: list) -> Dict[str, Any]:
-        params = {"attemptid": attempt_id}
-        for idx, slot_data in enumerate(data_seq):
-            params[f"data[{idx}][name]"] = slot_data["name"]
-            params[f"data[{idx}][value]"] = slot_data["value"]
-            if slot_data.get("slot") is not None:
-                params[f"data[{idx}][slot]"] = slot_data["slot"]
-        url = self._build_url("mod_quiz_save_attempt", params)
-        response = await self.client.get(url)
-        response.raise_for_status()
-        data = response.json()
-        self._check_moodle_error(data)
-        return data
+        return await self._call_process_attempt_php(attempt_id, data_seq, finishattempt=False)
 
     async def finish_quiz_attempt(self, attempt_id: int) -> Dict[str, Any]:
-        url = self._build_url("mod_quiz_finish_attempt", {"attemptid": attempt_id, "timeup": 0})
-        response = await self.client.get(url)
-        response.raise_for_status()
-        data = response.json()
-        self._check_moodle_error(data)
-        return data
+        return await self._call_process_attempt_php(attempt_id, [], finishattempt=True)
 
     async def get_attempt_review(self, attempt_id: int) -> Dict[str, Any]:
         url = self._build_url("mod_quiz_get_attempt_review", {"attemptid": attempt_id})

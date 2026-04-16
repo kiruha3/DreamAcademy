@@ -37,10 +37,11 @@
                   <div class="mod-name">{{ mod.name }}</div>
                   <div class="mod-type">{{ mod.modplural || typeLabel(mod.modname) }}</div>
                   <span v-if="isCompleted(mod.id)" class="badge-completed">✓ Выполнено</span>
+                  <span v-if="getResult(mod.id)" class="badge-result">{{ getResult(mod.id) }}</span>
                 </div>
 
                 <div class="mod-renderer">
-                  <ModuleRenderer :data="mod" />
+                  <ModuleRenderer :data="mod" @module-finished="loadProgress" />
                 </div>
 
                 <div class="mod-actions">
@@ -99,9 +100,22 @@ function isCompleted(cmid) {
 }
 
 function canComplete(modname) {
-  // Page, URL, Label can be marked complete inline
-  // Quiz, Assign, Forum will have their own completion logic in later phases
-  return ['page', 'url', 'label'].includes(modname)
+  // Keep manual fallback for modules that may fail auto-complete
+  return ['page', 'url', 'label', 'book', 'forum'].includes(modname)
+}
+
+function getResult(cmid) {
+  const m = progress.value.modules.find(m => m.cmid === cmid)
+  if (!m || !m.result) return ''
+  if (m.modname === 'quiz' && m.result.grade != null && m.result.max_grade) {
+    return `Балл: ${m.result.grade} / ${m.result.max_grade}`
+  }
+  if (m.modname === 'assign') {
+    if (m.result.grade != null) return `Оценка: ${m.result.grade}`
+    if (m.result.status === 'submitted') return 'Сдано'
+    if (m.result.status === 'graded') return 'Оценено'
+  }
+  return ''
 }
 
 async function handleComplete(cmid) {
@@ -187,5 +201,6 @@ onMounted(async () => {
 .btn-complete { background: var(--color-primary); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 .btn-complete:hover { opacity: 0.92; }
 .completed-hint { font-size: 13px; color: #6b7280; }
+.badge-result { font-size: 12px; color: #1e40af; background: #dbeafe; padding: 2px 8px; border-radius: 999px; }
 .loading { color: #6b7280; }
 </style>

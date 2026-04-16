@@ -40,6 +40,8 @@ import { ref, onMounted, computed } from 'vue'
 import { fetchAssignStatus, submitAssignment } from '@/api/client.js'
 import { useAuthStore } from '@/stores/auth'
 
+const emit = defineEmits(['finished'])
+
 const props = defineProps({
   data: { type: Object, required: true }
 })
@@ -77,6 +79,7 @@ async function submitFile() {
     await submitAssignment(props.data.course_id, props.data.cmid, selectedFile.value)
     selectedFile.value = null
     await loadStatus()
+    emit('finished')
   } catch (e) {
     alert('Ошибка отправки: ' + e.message)
   } finally {

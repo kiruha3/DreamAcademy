@@ -9,11 +9,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { fetchModuleDetail } from '@/api/client.js'
+import { fetchModuleDetail, markModuleComplete } from '@/api/client.js'
 
 const props = defineProps({
   data: { type: Object, required: true }
 })
+
+const emit = defineEmits(['finished'])
 
 const detail = ref({ ...props.data })
 
@@ -23,6 +25,12 @@ onMounted(async () => {
     detail.value = { ...detail.value, ...res }
   } catch (e) {
     console.error('Failed to load module detail', e)
+  }
+  try {
+    await markModuleComplete(props.data.course_id, props.data.cmid)
+    emit('finished')
+  } catch (e) {
+    console.error('Failed to mark module complete', e)
   }
 })
 

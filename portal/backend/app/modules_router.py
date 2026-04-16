@@ -1,12 +1,13 @@
 import os
 import shutil
+import traceback
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from .security import get_current_user, require_roles, get_db
-from .models import User, Submission, UserModuleCompletion
+from .models import User, Submission, QuizAttempt, UserModuleCompletion
 from .moodle_client import MoodleClient
 from .config import get_settings
 from . import moodle_db
@@ -104,10 +105,37 @@ async def get_module_detail(
     elif modname == "forum" and instance:
         payload["intro"] = instance.get("intro", "")
         payload["type"] = instance.get("type", "general")
+    elif modname == "book" and instance:
+        payload["intro"] = instance.get("intro", "")
+        payload["numbering"] = instance.get("numbering", 0)
+        payload["navstyle"] = instance.get("navstyle", 1)
     else:
         payload["intro"] = target_module.get("description", "")
 
     return payload
+
+
+@router.get("/{course_id}/modules/{cmid}/book/chapters")
+async def get_book_chapters(
+    course_id: int,
+    cmid: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+    _course_access: None = Depends(require_course_access),
+) -> Dict[str, Any]:
+    contents = await client.get_course_contents(course_id)
+    target_module = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target_module = mod
+                break
+        if target_module:
+            break
+    if not target_module or target_module.get("modname") != "book":
+        raise HTTPException(status_code=404, detail="Book module not found")
+    chapters = moodle_db.get_book_chapters(target_module["instance"])
+    return {"cmid": cmid, "chapters": chapters}
 
 
 @router.post("/{course_id}/modules/{cmid}/complete")
@@ -192,13 +220,33 @@ async def get_course_progress(
 
     completed_cmix = moodle_completed | local_completed
 
+    # Local results for quiz and assign
+    quiz_rows = db.query(QuizAttempt).filter(
+        QuizAttempt.user_id == current_user.id,
+        QuizAttempt.course_id == course_id,
+    ).all()
+    quiz_results = {row.cmid: {"grade": row.grade, "max_grade": row.max_grade} for row in quiz_rows}
+
+    sub_rows = db.query(Submission).filter(
+        Submission.user_id == current_user.id,
+        Submission.course_id == course_id,
+    ).all()
+    sub_results = {row.cmid: {"grade": row.grade, "status": "submitted" if row.grade is None else "graded"} for row in sub_rows}
+
     modules = []
     for mod in all_modules:
         cmid = mod["cmid"]
+        modname = mod["modname"]
+        result = None
+        if modname == "quiz" and cmid in quiz_results:
+            result = quiz_results[cmid]
+        elif modname == "assign" and cmid in sub_results:
+            result = sub_results[cmid]
         modules.append({
             "cmid": cmid,
-            "modname": mod["modname"],
+            "modname": modname,
             "completed": cmid in completed_cmix,
+            "result": result,
         })
 
     total = len(modules)
@@ -285,6 +333,16 @@ async def submit_assignment(
         )
         db.add(sub)
     db.commit()
+
+    # Mark module as completed locally
+    existing_comp = db.query(UserModuleCompletion).filter(
+        UserModuleCompletion.user_id == current_user.id,
+        UserModuleCompletion.cmid == cmid,
+    ).first()
+    if not existing_comp:
+        db.add(UserModuleCompletion(user_id=current_user.id, cmid=cmid, course_id=course_id))
+        db.commit()
+
     return {"status": "submitted", "cmid": cmid, "filename": file.filename}
 
 
@@ -382,6 +440,11 @@ async def start_quiz(
         msg = str(e)
         if "noquestionsfound" in msg.lower():
             raise HTTPException(status_code=400, detail="В тесте пока нет вопросов")
+        if "attemptstillinprogress" in msg.lower():
+            # Return existing in-progress attempt if found
+            existing = moodle_db.get_inprogress_attempt(current_user.moodle_user_id, target["instance"])
+            if existing:
+                return {"attempt": existing, "warnings": []}
         raise HTTPException(status_code=500, detail=f"Failed to start quiz: {msg}")
 
 
@@ -399,6 +462,7 @@ async def get_quiz_attempt(
             data = await user_client.get_attempt_data(attempt_id, page)
         return data
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get attempt: {str(e)}")
 
 
@@ -420,6 +484,7 @@ async def save_quiz_attempt_api(
             result = await user_client.save_quiz_attempt(attempt_id, payload.data)
         return result
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to save attempt: {str(e)}")
 
 
@@ -429,11 +494,68 @@ async def finish_quiz_attempt_api(
     cmid: int,
     attempt_id: int,
     current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+    db: Session = Depends(get_db),
     _course_access: None = Depends(require_course_access),
 ) -> Dict[str, Any]:
+    # Find quiz instance for max_grade lookup
+    contents = await client.get_course_contents(course_id)
+    target = None
+    for section in contents:
+        for mod in section.get("modules", []):
+            if mod.get("id") == cmid:
+                target = mod
+                break
+        if target:
+            break
+    if not target or target.get("modname") != "quiz":
+        raise HTTPException(status_code=404, detail="Quiz not found")
+
+    instance = moodle_db.get_module_instance("quiz", target["instance"])
+    max_grade = instance.get("sumgrades", 0) if instance else 0
+
     try:
         async with get_user_moodle_client(current_user.moodle_user_id) as user_client:
             result = await user_client.finish_quiz_attempt(attempt_id)
+            # Try to fetch review for grade
+            grade = None
+            try:
+                review = await user_client.get_attempt_review(attempt_id)
+                grade = review.get("grade")
+                if isinstance(grade, dict):
+                    grade = grade.get("grade")
+            except Exception:
+                pass
+
+            # Save local quiz attempt result
+            existing_qa = db.query(QuizAttempt).filter(
+                QuizAttempt.user_id == current_user.id,
+                QuizAttempt.cmid == cmid,
+            ).first()
+            if existing_qa:
+                existing_qa.moodle_attempt_id = attempt_id
+                existing_qa.grade = grade
+                existing_qa.max_grade = max_grade
+                existing_qa.state = "finished"
+                existing_qa.finished_at = datetime.now(timezone.utc)
+            else:
+                db.add(QuizAttempt(
+                    user_id=current_user.id,
+                    cmid=cmid,
+                    course_id=course_id,
+                    moodle_attempt_id=attempt_id,
+                    grade=grade,
+                    max_grade=max_grade,
+                ))
+
+            # Mark completion
+            existing_comp = db.query(UserModuleCompletion).filter(
+                UserModuleCompletion.user_id == current_user.id,
+                UserModuleCompletion.cmid == cmid,
+            ).first()
+            if not existing_comp:
+                db.add(UserModuleCompletion(user_id=current_user.id, cmid=cmid, course_id=course_id))
+            db.commit()
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to finish attempt: {str(e)}")

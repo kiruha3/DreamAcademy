@@ -11,7 +11,8 @@
 
     <div v-else-if="reviewData" class="quiz-review">
       <h4>Результат</h4>
-      <div class="review-score">Балл: {{ reviewData.grade || reviewData.mark }} / {{ reviewData.grade?.maxgrade || quizMeta.sumgrades }}</div>
+      <div v-if="hasReviewScore" class="review-score">Балл: {{ reviewData.grade || reviewData.mark }} / {{ reviewData.grade?.maxgrade || quizMeta.sumgrades }}</div>
+      <div v-else class="review-score">Тест завершён</div>
       <div v-for="q in reviewData.questions" :key="q.slot" class="review-question">
         <div v-html="sanitized(q.html)"></div>
       </div>
@@ -41,7 +42,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { startQuiz, fetchQuizAttempt, saveQuizAttempt, finishQuizAttempt, fetchQuizReview } from '@/api/client.js'
+import { startQuiz, fetchQuizAttempt, saveQuizAttempt, finishQuizAttempt, fetchQuizReview, markModuleComplete } from '@/api/client.js'
 import QuestionRenderer from './QuestionRenderer.vue'
 
 const props = defineProps({
@@ -51,6 +52,7 @@ const props = defineProps({
 const emit = defineEmits(['finished'])
 
 const attemptId = ref(null)
+const attemptUniqueId = ref(null)
 const starting = ref(false)
 const finishing = ref(false)
 const noQuestions = ref(false)
@@ -59,6 +61,10 @@ const currentIndex = ref(0)
 const answers = ref({})
 const reviewData = ref(null)
 const quizMeta = ref({})
+
+const hasReviewScore = computed(() => {
+  return reviewData.value && (reviewData.value.grade != null || reviewData.value.mark != null)
+})
 
 async function start() {
   starting.value = true
@@ -84,6 +90,7 @@ async function loadAttempt(id) {
   try {
     const res = await fetchQuizAttempt(props.data.course_id, props.data.cmid, id, 0)
     quizMeta.value = res.quizinfo || {}
+    attemptUniqueId.value = res.attempt?.uniqueid || null
     questions.value = normalizeQuestions(res.questions || [])
     currentIndex.value = 0
   } catch (e) {
@@ -92,25 +99,80 @@ async function loadAttempt(id) {
 }
 
 function normalizeQuestions(raw) {
+  if (!raw || !raw.length) return []
   return raw.map(q => {
-    const type = q.type || 'unknown'
+    const html = q.html || ''
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const root = doc.body.querySelector('.que')
+    const typeClass = root ? Array.from(root.classList).find(c =>
+      ['multichoice', 'truefalse', 'match', 'shortanswer', 'essay', 'numerical'].includes(c)
+    ) : 'unknown'
+    const type = typeClass || 'unknown'
+
+    const qtextEl = doc.querySelector('.qtext')
+    const questiontext = qtextEl ? qtextEl.innerHTML : ''
+
     const out = {
       slot: q.slot,
       type,
-      questiontext: q.questiontext || '',
+      questiontext,
       answers: [],
       stems: [],
       options: [],
       single: true,
     }
+
     if (type === 'multichoice' || type === 'truefalse') {
-      out.answers = (q.answers || []).map(a => ({ id: a.id || a.answer, text: a.text || a.label || a.answer }))
-      out.single = q.single !== undefined ? q.single : true
+      const answerDiv = doc.querySelector('.answer')
+      if (answerDiv) {
+        const rows = answerDiv.querySelectorAll(':scope > div')
+        let hasCheckbox = false
+        let hasRadio = false
+        rows.forEach(row => {
+          const input = row.querySelector('input[type="radio"], input[type="checkbox"]')
+          if (!input) return
+          if (input.type === 'checkbox') hasCheckbox = true
+          if (input.type === 'radio') hasRadio = true
+          if (input.value === '-1') return // skip "clear choice"
+          let text = ''
+          const labelDiv = row.querySelector('[data-region="answer-label"]')
+          if (labelDiv) {
+            const clone = labelDiv.cloneNode(true)
+            const numSpan = clone.querySelector('.answernumber')
+            if (numSpan) numSpan.remove()
+            text = clone.textContent.trim()
+          } else {
+            const label = row.querySelector('label')
+            if (label) text = label.textContent.trim()
+          }
+          out.answers.push({ id: input.value, text })
+        })
+        out.single = hasRadio && !hasCheckbox
+      }
     }
+
     if (type === 'match') {
-      out.stems = q.stems || []
-      out.options = (q.options || []).map(o => ({ value: o.value || o.answer, label: o.label || o.text || o.answer }))
+      const table = doc.querySelector('table.answer')
+      if (table) {
+        table.querySelectorAll('tr').forEach((tr, idx) => {
+          const textTd = tr.querySelector('td.text')
+          const select = tr.querySelector('select')
+          if (textTd && select) {
+            out.stems.push({ code: String(idx), text: textTd.textContent.trim() })
+          }
+        })
+        const firstSelect = table.querySelector('select')
+        if (firstSelect) {
+          firstSelect.querySelectorAll('option').forEach(opt => {
+            if (opt.value !== '') {
+              out.options.push({ value: opt.value, label: opt.textContent.trim() })
+            }
+          })
+        }
+      }
     }
+
     return out
   })
 }
@@ -148,25 +210,30 @@ async function doSave() {
 
 function buildSavePayload() {
   const dataSeq = []
+  const uid = attemptUniqueId.value
+  if (!uid) return dataSeq
   questions.value.forEach(q => {
     const val = answers.value[q.slot]
+    const prefix = `q${uid}:${q.slot}`
     if (q.type === 'multichoice' || q.type === 'truefalse') {
       if (Array.isArray(val)) {
         val.forEach(v => {
-          dataSeq.push({ name: `q${q.slot}:${v}`, value: 1, slot: q.slot })
+          dataSeq.push({ name: `${prefix}_choice${v}`, value: 1, slot: q.slot })
         })
-      } else if (val) {
-        dataSeq.push({ name: `q${q.slot}:${val}`, value: 1, slot: q.slot })
+      } else if (val !== undefined && val !== null && val !== '') {
+        dataSeq.push({ name: `${prefix}_answer`, value: String(val), slot: q.slot })
       }
     } else if (q.type === 'match') {
       if (val && typeof val === 'object') {
         Object.entries(val).forEach(([code, v]) => {
-          dataSeq.push({ name: `q${q.slot}:${code}`, value: v, slot: q.slot })
+          if (v !== undefined && v !== null && v !== '') {
+            dataSeq.push({ name: `${prefix}_sub${code}`, value: String(v), slot: q.slot })
+          }
         })
       }
     } else {
-      if (val !== undefined && val !== null) {
-        dataSeq.push({ name: `q${q.slot}:answer`, value: String(val), slot: q.slot })
+      if (val !== undefined && val !== null && val !== '') {
+        dataSeq.push({ name: `${prefix}_answer`, value: String(val), slot: q.slot })
       }
     }
   })
@@ -178,8 +245,18 @@ async function finish() {
   try {
     await doSave()
     await finishQuizAttempt(props.data.course_id, props.data.cmid, attemptId.value)
-    const review = await fetchQuizReview(props.data.course_id, props.data.cmid, attemptId.value)
-    reviewData.value = review
+    try {
+      const review = await fetchQuizReview(props.data.course_id, props.data.cmid, attemptId.value)
+      reviewData.value = review
+    } catch (reviewErr) {
+      console.warn('Review not available', reviewErr)
+      reviewData.value = { grade: null, mark: null, questions: [] }
+    }
+    try {
+      await markModuleComplete(props.data.course_id, props.data.cmid)
+    } catch (compErr) {
+      console.warn('Failed to mark module complete', compErr)
+    }
     emit('finished')
   } catch (e) {
     alert('Ошибка завершения: ' + e.message)
@@ -190,6 +267,7 @@ async function finish() {
 
 function reset() {
   attemptId.value = null
+  attemptUniqueId.value = null
   noQuestions.value = false
   questions.value = []
   answers.value = {}

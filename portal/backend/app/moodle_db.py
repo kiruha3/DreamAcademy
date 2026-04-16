@@ -1,5 +1,8 @@
 import os
 import secrets
+import subprocess
+import base64
+import json
 import pymysql
 from typing import List, Dict, Any, Optional
 
@@ -201,12 +204,25 @@ def add_module(course_id: int, section_num: int, modname: str, name: str, conten
             elif modname == "quiz":
                 cur.execute(
                     f"""
-                    INSERT INTO {PREFIX}quiz (course, name, intro, introformat, timeopen, timeclose, grade, sumgrades, timemodified)
-                    VALUES (%s, %s, %s, 1, 0, 0, 10, 10, UNIX_TIMESTAMP())
+                    INSERT INTO {PREFIX}quiz (
+                        course, name, intro, introformat, timeopen, timeclose, grade, sumgrades,
+                        preferredbehaviour, questionsperpage, timemodified,
+                        reviewattempt, reviewcorrectness, reviewmarks, reviewmaxmarks,
+                        reviewspecificfeedback, reviewgeneralfeedback, reviewrightanswer, reviewoverallfeedback
+                    )
+                    VALUES (%s, %s, %s, 1, 0, 0, %s, %s, 'deferredfeedback', 0, UNIX_TIMESTAMP(),
+                            69952, 69952, 69952, 1, 69952, 69952, 69952, 69952)
                     """,
-                    (course_id, name, content or options.get("intro", "")),
+                    (course_id, name, content or options.get("intro", ""), options.get("grade", 10), options.get("sumgrades", 10)),
                 )
                 instance_id = cur.lastrowid
+                cur.execute(
+                    f"""
+                    INSERT INTO {PREFIX}quiz_sections (quizid, firstslot, heading, shufflequestions)
+                    VALUES (%s, 1, '', 0)
+                    """,
+                    (instance_id,),
+                )
             elif modname == "assign":
                 duedate = options.get("duedate", 0)
                 grade = options.get("grade", 100)
@@ -216,6 +232,15 @@ def add_module(course_id: int, section_num: int, modname: str, name: str, conten
                     VALUES (%s, %s, %s, 1, %s, %s, UNIX_TIMESTAMP())
                     """,
                     (course_id, name, content or options.get("intro", ""), duedate, grade),
+                )
+                instance_id = cur.lastrowid
+            elif modname == "book":
+                cur.execute(
+                    f"""
+                    INSERT INTO {PREFIX}book (course, name, intro, introformat, numbering, navstyle, customtitles, revision, timecreated, timemodified)
+                    VALUES (%s, %s, %s, 1, 0, 1, 0, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP())
+                    """,
+                    (course_id, name, content or options.get("intro", "")),
                 )
                 instance_id = cur.lastrowid
             else:
@@ -241,6 +266,128 @@ def add_module(course_id: int, section_num: int, modname: str, name: str, conten
                 )
             conn.commit()
             return cmid
+
+
+def add_book(course_id: int, section_num: int, name: str, intro: str = "") -> tuple:
+    module_id = _get_module_id("book")
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}book (course, name, intro, introformat, numbering, navstyle, customtitles, revision, timecreated, timemodified)
+                VALUES (%s, %s, %s, 1, 0, 1, 0, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP())
+                """,
+                (course_id, name, intro),
+            )
+            book_id = cur.lastrowid
+            sec = _get_section_by_num(course_id, section_num)
+            section_id = sec["id"] if sec else section_num
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}course_modules (course, module, instance, section, added, visible, visibleold)
+                VALUES (%s, %s, %s, %s, UNIX_TIMESTAMP(), 1, 1)
+                """,
+                (course_id, module_id, book_id, section_id),
+            )
+            cmid = cur.lastrowid
+            if sec:
+                new_seq = f"{sec['sequence']},{cmid}" if sec.get("sequence") else str(cmid)
+                cur.execute(
+                    f"UPDATE {PREFIX}course_sections SET sequence = %s WHERE id = %s",
+                    (new_seq, sec["id"]),
+                )
+            conn.commit()
+            return cmid, book_id
+
+
+def add_book_chapter(book_id: int, title: str, content: str, chapter_num: int = 0, subchapter: int = 0) -> int:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            # Determine next pagenum
+            cur.execute(
+                f"SELECT MAX(pagenum) as maxpage FROM {PREFIX}book_chapters WHERE bookid = %s",
+                (book_id,),
+            )
+            row = cur.fetchone()
+            next_pagenum = (row["maxpage"] or 0) + 1
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}book_chapters (bookid, pagenum, subchapter, title, content, contentformat, hidden, timecreated, timemodified, importsrc)
+                VALUES (%s, %s, %s, %s, %s, 1, 0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), '')
+                """,
+                (book_id, next_pagenum, subchapter, title, content),
+            )
+            chapter_id = cur.lastrowid
+            # Update book revision
+            cur.execute(
+                f"UPDATE {PREFIX}book SET revision = revision + 1, timemodified = UNIX_TIMESTAMP() WHERE id = %s",
+                (book_id,),
+            )
+            conn.commit()
+            return chapter_id
+
+
+def get_inprogress_attempt(user_id: int, quiz_id: int) -> Optional[Dict[str, Any]]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, quiz, userid, attempt, uniqueid, layout, currentpage, preview, state, timestart, timefinish, timemodified, timemodifiedoffline, timecheckstate, sumgrades, gradednotificationsenttime
+                FROM {PREFIX}quiz_attempts
+                WHERE userid = %s AND quiz = %s AND state = 'inprogress'
+                ORDER BY timestart DESC
+                LIMIT 1
+                """,
+                (user_id, quiz_id),
+            )
+            row = cur.fetchone()
+            if row:
+                return {
+                    "id": row["id"],
+                    "quiz": row["quiz"],
+                    "userid": row["userid"],
+                    "attempt": row["attempt"],
+                    "uniqueid": row["uniqueid"],
+                    "layout": row["layout"],
+                    "currentpage": row["currentpage"],
+                    "preview": row["preview"],
+                    "state": row["state"],
+                    "timestart": row["timestart"],
+                    "timefinish": row["timefinish"],
+                    "timemodified": row["timemodified"],
+                    "timemodifiedoffline": row["timemodifiedoffline"],
+                    "timecheckstate": row["timecheckstate"],
+                    "sumgrades": row["sumgrades"],
+                    "gradednotificationsenttime": row["gradednotificationsenttime"],
+                }
+            return None
+
+
+def get_book_chapters(book_id: int) -> List[Dict[str, Any]]:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT id, pagenum, subchapter, title, content, hidden FROM {PREFIX}book_chapters WHERE bookid = %s ORDER BY pagenum",
+                (book_id,),
+            )
+            return cur.fetchall()
+
+
+def add_quiz_question(quiz_id: int, qtype: str, name: str, questiontext: str, answers: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Add a question to a quiz using a PHP helper script inside the Moodle container."""
+    MOODLE_CONTAINER = os.getenv("MOODLE_CONTAINER_NAME", "dd_academy_moodle")
+    answers_b64 = base64.b64encode(json.dumps(answers).encode("utf-8")).decode("utf-8")
+    cmd = [
+        "docker", "exec", MOODLE_CONTAINER, "php", "/var/www/html/moodle_add_question.php",
+        str(quiz_id), qtype, name, questiontext, answers_b64,
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(f"PHP script failed: {result.stderr or result.stdout}")
+    data = json.loads(result.stdout.strip().split("\n")[-1])
+    if not data.get("success"):
+        raise RuntimeError(f"Failed to add question: {data.get('error')}")
+    return data
 
 
 def clear_course_contents(course_id: int) -> None:
@@ -303,6 +450,83 @@ def delete_module(cmid: int) -> None:
                     (new_seq, section_id),
                 )
             conn.commit()
+
+
+def create_course(fullname: str, shortname: str, categoryid: int = 1, summary: str = "") -> int:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}course (category, sortorder, fullname, shortname, idnumber,
+                    summary, summaryformat, format, showgrades, newsitems, startdate, marker,
+                    maxbytes, legacyfiles, showreports, visible, visibleold, groupmode,
+                    groupmodeforce, defaultgroupingid, lang, calendartype, theme, timecreated,
+                    timemodified, requested, enablecompletion, completionnotify, cacherev)
+                VALUES (%s, 0, %s, %s, '', %s, 1, 'topics', 1, 5, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 'ru', 'gregorian', '', UNIX_TIMESTAMP(), UNIX_TIMESTAMP(), 0, 0, 0, UNIX_TIMESTAMP())
+                """,
+                (categoryid, fullname, shortname, summary),
+            )
+            course_id = cur.lastrowid
+            # Ensure context record exists for the course
+            cur.execute(
+                f"SELECT id FROM {PREFIX}context WHERE contextlevel = 50 AND instanceid = %s",
+                (course_id,),
+            )
+            if not cur.fetchone():
+                cur.execute(
+                    f"""
+                    INSERT INTO {PREFIX}context (contextlevel, instanceid, depth, path, locked)
+                    VALUES (50, %s, 0, '', 0)
+                    """,
+                    (course_id,),
+                )
+                ctx_id = cur.lastrowid
+                cur.execute(
+                    f"UPDATE {PREFIX}context SET path = %s, depth = 2 WHERE id = %s",
+                    (f"/1/{ctx_id}", ctx_id),
+                )
+            # Add default general section
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}course_sections (course, section, name, summary, summaryformat, sequence, visible, timemodified)
+                VALUES (%s, 0, '', '', 1, '', 1, UNIX_TIMESTAMP())
+                """,
+                (course_id,),
+            )
+            # Enable manual enrolment so users can be enrolled
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}enrol (enrol, status, courseid, sortorder, name, enrolperiod, enrolstartdate, enrolenddate, expirynotify, expirythreshold, roleid, customint1, customint2, customint3, customint4, customint5, customint6, customint7, customint8, customchar1, customchar2, customchar3, customdec1, customdec2, timecreated, timemodified)
+                VALUES ('manual', 0, %s, 0, '', 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, '', '', '', 0.0, 0.0, UNIX_TIMESTAMP(), UNIX_TIMESTAMP())
+                """,
+                (course_id,),
+            )
+            conn.commit()
+            return course_id
+
+
+def create_category(name: str, parent: int = 0, idnumber: str = "") -> int:
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT MAX(sortorder) as maxsort FROM {PREFIX}course_categories"
+            )
+            row = cur.fetchone()
+            next_sort = (row["maxsort"] or 0) + 1
+            cur.execute(
+                f"""
+                INSERT INTO {PREFIX}course_categories (name, idnumber, description, descriptionformat, parent, sortorder, coursecount, visible, visibleold, timemodified, depth, path, theme)
+                VALUES (%s, %s, '', 1, %s, %s, 0, 1, 1, UNIX_TIMESTAMP(), 0, '', '')
+                """,
+                (name, idnumber, parent, next_sort),
+            )
+            cat_id = cur.lastrowid
+            cur.execute(
+                f"UPDATE {PREFIX}course_categories SET path = %s, depth = %s WHERE id = %s",
+                (f"/{cat_id}", 1 if parent == 0 else 2, cat_id),
+            )
+            conn.commit()
+            return cat_id
 
 
 def get_course_images(course_ids: List[int], public_url: str = "", token: str = "") -> Dict[int, Dict[str, Any]]:

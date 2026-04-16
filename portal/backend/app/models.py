@@ -29,6 +29,20 @@ class Submission(Base):
     graded_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class QuizAttempt(Base):
+    __tablename__ = "quiz_attempts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    cmid = Column(Integer, nullable=False, index=True)
+    course_id = Column(Integer, nullable=False, index=True)
+    moodle_attempt_id = Column(Integer, nullable=False)
+    grade = Column(Float, nullable=True)
+    max_grade = Column(Float, nullable=True)
+    state = Column(String, default="finished", nullable=False)
+    finished_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class UserModuleCompletion(Base):
     __tablename__ = "user_module_completions"
 

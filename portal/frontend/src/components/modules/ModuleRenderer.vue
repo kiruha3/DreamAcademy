@@ -1,6 +1,6 @@
 <template>
   <div class="module-renderer">
-    <component :is="viewerComponent" :data="moduleData" />
+    <component :is="viewerComponent" :data="moduleData" @finished="onFinished" />
   </div>
 </template>
 
@@ -13,6 +13,7 @@ import GenericViewer from './GenericViewer.vue'
 import AssignmentViewer from './AssignmentViewer.vue'
 import QuizPlayer from './QuizPlayer.vue'
 import ForumViewer from './ForumViewer.vue'
+import BookViewer from './BookViewer.vue'
 
 const props = defineProps({
   data: { type: Object, required: true }
@@ -26,11 +27,17 @@ const viewerComponent = computed(() => {
     case 'assign': return AssignmentViewer
     case 'quiz': return QuizPlayer
     case 'forum': return ForumViewer
+    case 'book': return BookViewer
     default: return GenericViewer
   }
 })
 
 const moduleData = computed(() => props.data)
+
+const emit = defineEmits(['moduleFinished'])
+function onFinished() {
+  emit('moduleFinished')
+}
 </script>
 
 <style scoped>

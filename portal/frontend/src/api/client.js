@@ -195,3 +195,8 @@ export function fetchForumPosts(courseId, cmid, discussionId) {
 export function createForumPost(courseId, cmid, discussionId, subject, message, parentPostId) {
   return apiPost(`/api/courses/${courseId}/modules/${cmid}/forum/discussions/${discussionId}/posts`, { subject, message, parent_post_id: parentPostId }, true)
 }
+
+// Book
+export function fetchBookChapters(courseId, cmid) {
+  return apiGet(`/api/courses/${courseId}/modules/${cmid}/book/chapters`)
+}
