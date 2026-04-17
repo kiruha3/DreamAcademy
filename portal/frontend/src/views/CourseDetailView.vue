@@ -107,6 +107,7 @@ function typeLabel(modname) {
     forum: 'Форум',
     label: 'Ярлык',
     resource: 'Файл',
+    scorm: 'SCORM',
   }
   return map[modname] || modname
 }
@@ -118,7 +119,7 @@ function isCompleted(cmid) {
 
 function canComplete(modname) {
   // Keep manual fallback for all modules
-  return ['page', 'url', 'label', 'book', 'forum', 'quiz', 'assign', 'resource'].includes(modname)
+  return ['page', 'url', 'label', 'book', 'forum', 'quiz', 'assign', 'resource', 'scorm'].includes(modname)
 }
 
 let refreshTimeout = null

@@ -14,6 +14,7 @@ import AssignmentViewer from './AssignmentViewer.vue'
 import QuizPlayer from './QuizPlayer.vue'
 import ForumViewer from './ForumViewer.vue'
 import BookViewer from './BookViewer.vue'
+import ScormViewer from './ScormViewer.vue'
 
 const props = defineProps({
   data: { type: Object, required: true }
@@ -28,6 +29,7 @@ const viewerComponent = computed(() => {
     case 'quiz': return QuizPlayer
     case 'forum': return ForumViewer
     case 'book': return BookViewer
+    case 'scorm': return ScormViewer
     default: return GenericViewer
   }
 })
