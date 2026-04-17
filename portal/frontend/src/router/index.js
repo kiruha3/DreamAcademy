@@ -16,6 +16,7 @@ const routes = [
   { path: '/courses/:id', name: 'CourseDetail', component: CourseDetailView, meta: { requiresAuth: true } },
   { path: '/dashboard', name: 'Dashboard', component: DashboardView, meta: { requiresAuth: true } },
   { path: '/admin', name: 'Admin', component: AdminView, meta: { requiresAuth: true, roles: ['admin', 'teacher', 'course_creator'] } },
+  { path: '/admin/courses', redirect: '/admin' },
 ]
 
 const router = createRouter({
@@ -23,13 +24,17 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return next('/login')
   }
   if (to.meta.guestOnly && authStore.isAuthenticated) {
     return next('/dashboard')
+  }
+  // If token exists but user not loaded yet (e.g. after page reload), wait for it
+  if (authStore.isAuthenticated && !authStore.user) {
+    await authStore.loadUser()
   }
   if (to.meta.roles && (!authStore.user || !to.meta.roles.includes(authStore.user.role))) {
     return next('/')

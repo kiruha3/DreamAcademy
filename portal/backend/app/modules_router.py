@@ -1,6 +1,5 @@
 import os
 import shutil
-import traceback
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from typing import Dict, Any, List
@@ -45,6 +44,21 @@ async def require_course_access(
     enrolled_ids = {c.get("id") for c in user_courses} if isinstance(user_courses, list) else set()
     if course_id not in enrolled_ids:
         raise HTTPException(status_code=403, detail="Not enrolled in this course")
+
+
+@router.post("/{course_id}/enrol")
+async def enrol_in_course(
+    course_id: int,
+    current_user: User = Depends(get_current_user),
+    client: MoodleClient = Depends(get_moodle_client),
+) -> Dict[str, Any]:
+    if not current_user.moodle_user_id:
+        raise HTTPException(status_code=400, detail="User not linked to Moodle")
+    try:
+        await client.enrol_user(course_id, current_user.moodle_user_id, role_id=5)
+        return {"status": "enrolled", "course_id": course_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enrol: {str(e)}")
 
 
 @router.get("/{course_id}/modules/{cmid}")
@@ -462,7 +476,6 @@ async def get_quiz_attempt(
             data = await user_client.get_attempt_data(attempt_id, page)
         return data
     except Exception as e:
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to get attempt: {str(e)}")
 
 
@@ -484,7 +497,6 @@ async def save_quiz_attempt_api(
             result = await user_client.save_quiz_attempt(attempt_id, payload.data)
         return result
     except Exception as e:
-        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to save attempt: {str(e)}")
 
 

@@ -87,6 +87,10 @@ export function fetchCourseContents(courseId) {
   return apiGet(`/api/courses/${courseId}/contents`)
 }
 
+export function enrolCourse(courseId) {
+  return apiPost(`/api/courses/${courseId}/enrol`, {}, true)
+}
+
 export function fetchAdminCourseContents(courseId) {
   return apiGet(`/api/admin/courses/${courseId}/contents`)
 }

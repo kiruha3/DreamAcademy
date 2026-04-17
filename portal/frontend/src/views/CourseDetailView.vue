@@ -27,6 +27,11 @@
 
       <p v-if="loading" class="loading">Загрузка содержимого...</p>
       <div v-else>
+        <div v-if="sections.length === 0 || sections.every(s => !(s.modules && s.modules.length))" class="empty-course">
+          <p>В этом курсе пока нет материалов.</p>
+          <button v-if="!enrolling" class="btn-complete" @click="handleEnrol">Записаться на курс</button>
+          <p v-else class="loading">Запись...</p>
+        </div>
         <div v-for="section in sections" :key="section.id" class="section-card">
           <h3 class="section-title">{{ section.name || 'Раздел ' + section.section }}</h3>
           <div class="modules">
@@ -62,7 +67,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchCourseContents, fetchCourses, fetchCourseProgress, markModuleComplete } from '@/api/client.js'
+import { fetchCourseContents, fetchCourses, fetchCourseProgress, markModuleComplete, enrolCourse } from '@/api/client.js'
 import ModuleRenderer from '@/components/modules/ModuleRenderer.vue'
 
 const route = useRoute()
@@ -70,7 +75,19 @@ const sections = ref([])
 const courseName = ref('Курс')
 const courseImage = ref('')
 const loading = ref(true)
+const enrolling = ref(false)
 const progress = ref({ completed: 0, total: 0, modules: [] })
+
+async function handleEnrol() {
+  enrolling.value = true
+  try {
+    await enrolCourse(route.params.id)
+    window.location.reload()
+  } catch (e) {
+    alert('Не удалось записаться на курс: ' + e.message)
+    enrolling.value = false
+  }
+}
 
 const progressPercent = computed(() => {
   if (!progress.value.total) return 0
@@ -229,4 +246,5 @@ onMounted(async () => {
 .completed-hint { font-size: 13px; color: #6b7280; }
 .badge-result { font-size: 12px; color: #1e40af; background: #dbeafe; padding: 2px 8px; border-radius: 999px; }
 .loading { color: #6b7280; }
+.empty-course { color: #6b7280; font-size: 16px; padding: 24px 0; }
 </style>
