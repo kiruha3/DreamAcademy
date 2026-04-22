@@ -6,7 +6,7 @@
 
 ## 1. Обзор проекта
 
-**DreamDocs Academy** (также встречается название DreamDox Academy) — это образовательный портал с интеграцией LMS Moodle.
+**DreamDocs Academy** — это образовательный портал с интеграцией LMS Moodle.
 
 Архитектура состоит из трёх частей:
 1. **Moodle** — ядро LMS (PHP 8.1/Apache, Docker), порт `8080`. Скачивается `v4.4.0` из GitHub.
