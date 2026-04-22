@@ -59,3 +59,14 @@ uploads/
 *.mp3
 *.wav
 *.pdf
+*.zip
+
+# Secrets & credentials (never commit)
+credentials.txt
+login_payload.json
+
+# One-off scripts & temporary test files
+build_car_repair_course.py
+check_db.py
+portal/backend/test_*.py
+portal/backend/test_*.php
